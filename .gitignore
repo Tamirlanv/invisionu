@@ -1,0 +1,16 @@
+node_modules
+.next
+.turbo
+dist
+__pycache__
+*.py[cod]
+.venv
+venv
+.env
+.env.local
+data/uploads
+*.egg-info
+.DS_Store
+coverage
+.pytest_cache
+alembic.ini.bak
