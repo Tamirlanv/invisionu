@@ -122,9 +122,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 56px;
   width: 100%;
-  max-width: 879px;
+  max-width: 1316px;
 }
 
 .resourcesTitle {
@@ -140,28 +140,59 @@
 .resourceGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(24px, 4vw, 56px);
+  gap: 12px;
   justify-content: center;
   align-items: flex-start;
   width: 100%;
 }
 
-.resourceItem {
+.resourceCard {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 0 1 auto;
-  min-width: 140px;
+  justify-content: space-between;
+  width: 320px;
+  min-height: 204px;
+  padding: 16px 24px;
+  border-radius: 16px;
+  border: 1px solid #e1e1e1;
+  box-sizing: border-box;
+  background: #fff;
+  gap: 16px;
+}
+
+.resourceCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.resourceCardTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 450;
+  line-height: 24px;
+  letter-spacing: -0.72px;
+  color: #000;
+}
+
+.resourceCardDesc {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 20px;
+  letter-spacing: -0.42px;
+  color: #626262;
 }
 
 .resourceBtn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   padding: 12px 24px;
   border-radius: 8px;
-  border: none;
   background: #262626;
   color: #fff;
   font-size: 14px;
@@ -169,10 +200,10 @@
   line-height: 14px;
   letter-spacing: -0.42px;
   font-family: inherit;
-  cursor: pointer;
   white-space: nowrap;
-  transition: background 0.2s ease;
   text-decoration: none;
+  box-sizing: border-box;
+  transition: background 0.2s ease;
 }
 
 .resourceBtn:hover {
@@ -181,21 +212,21 @@
   text-decoration: none;
 }
 
-.resourceDesc {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 350;
-  line-height: 16px;
-  letter-spacing: -0.48px;
-  color: #626262;
-  text-align: center;
-  max-width: 200px;
+@media (max-width: 1340px) {
+  .resources {
+    max-width: 100%;
+  }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 720px) {
   .resourceGrid {
     flex-direction: column;
     align-items: center;
+  }
+
+  .resourceCard {
+    width: 100%;
+    max-width: 400px;
   }
 
   .resourcesTitle {

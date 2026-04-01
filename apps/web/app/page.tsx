@@ -4,23 +4,27 @@ import styles from "./page.module.css";
 
 const RESOURCES = [
   {
+    title: "GitHub",
+    description: "Ссылка на репозитрий проекта, с описаним архитектуры и исходным кодом",
     button: "GitHub inVision",
-    description: "GitHub репозитории",
     link: "https://github.com/mi-llen-nial/inVisionU",
   },
   {
+    title: "Google Disk – Презентация",
+    description: "Ссылка на презентацию проекта, с показательным примером возможностей платформы",
     button: "Google Disk",
-    description: "Презентация проекта",
     link: "https://drive.google.com",
   },
   {
+    title: "Google Disk – Документация",
+    description: "Ссылка на документацию проекта, с подробным описанием решения поставленной задачи в ТЗ",
     button: "Google Disk",
-    description: "Документация решения",
     link: "https://drive.google.com/drive/folders/1Y0eQFydfT9o2MaWy7dlakuR1KfiQywtk?usp=sharing",
   },
   {
-    button: "Telegram Bot",
-    description: "FAQ и поддержка по проекту",
+    title: "Telegram Bot",
+    description: "Ссылка на bot проекта, с возможностью задать дополнительные вопросы нашей поддержки и использовать мобильную версию MiniApp",
+    button: "Telegram",
     link: "https://telegram.org",
   },
 ] as const;
@@ -60,11 +64,15 @@ export default function HomePage() {
 
         <section className={styles.resources} aria-labelledby="resources-heading">
           <h2 id="resources-heading" className={styles.resourcesTitle}>
-            Ресурсы
+            Ресурсы KOMO
           </h2>
           <div className={styles.resourceGrid}>
             {RESOURCES.map((resource) => (
-              <div key={resource.description} className={styles.resourceItem}>
+              <div key={resource.title} className={styles.resourceCard}>
+                <div className={styles.resourceCardBody}>
+                  <p className={styles.resourceCardTitle}>{resource.title}</p>
+                  <p className={styles.resourceCardDesc}>{resource.description}</p>
+                </div>
                 <a
                   href={resource.link}
                   target="_blank"
@@ -73,7 +81,6 @@ export default function HomePage() {
                 >
                   {resource.button}
                 </a>
-                <p className={styles.resourceDesc}>{resource.description}</p>
               </div>
             ))}
           </div>
