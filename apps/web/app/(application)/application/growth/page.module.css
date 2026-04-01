@@ -1,0 +1,75 @@
+.headRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.description {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 18px;
+  color: #626262;
+}
+
+.questionRule {
+  height: 1px;
+  width: 100%;
+  margin: 20px 0;
+  border: 0;
+  background: #e1e1e1;
+}
+
+.questionBlock {
+  margin: 0;
+}
+
+.questionLabel {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: var(--fw-semibold, 550);
+  line-height: 24px;
+  letter-spacing: -0.6px;
+  color: #262626;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 210px;
+  resize: vertical;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 20px;
+  color: #262626;
+  font-family: inherit;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #98da00;
+  box-shadow: 0 0 0 3px rgba(152, 218, 0, 0.12);
+}
+
+.textarea::placeholder {
+  color: #e1e1e1;
+}
+
+.counterRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.counter,
+.counterHint {
+  color: #626262;
+  font-size: 14px;
+  font-weight: 350;
+}

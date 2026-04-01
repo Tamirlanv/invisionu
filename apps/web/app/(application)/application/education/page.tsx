@@ -455,10 +455,10 @@ export default function EducationPage() {
       <Divider />
 
       <div className={formStyles.formFooter}>
-        <button className="btn" type="submit" disabled={isSubmitting}>
+        <button className="btn secondary" type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Сохранение…" : "Сохранить"}
         </button>
-        <Link className="btn secondary" href="/application/internal-test">
+        <Link className="btn" href="/application/internal-test">
           Далее
         </Link>
       </div>

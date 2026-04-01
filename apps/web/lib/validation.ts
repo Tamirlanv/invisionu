@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { GROWTH_CHAR_LIMITS, GROWTH_QUESTION_IDS } from "./growth-path/constants";
+import { normalizeGrowthText } from "./growth-path/text";
 import { MAX_MOTIVATION_LETTER_LENGTH, MIN_MOTIVATION_LETTER_LENGTH } from "./motivation-letter";
 
 export const registerSchema = z
@@ -131,4 +133,48 @@ export const motivationSchema = z.object({
   was_pasted: z.boolean().default(false),
   paste_count: z.number().int().nonnegative().default(0),
   last_pasted_at: z.string().nullable().optional(),
+});
+
+const growthMetaSchema = z.object({
+  was_pasted: z.boolean().default(false),
+  paste_count: z.number().int().nonnegative().default(0),
+  last_pasted_at: z.string().nullable().optional(),
+  typing_count: z.number().int().nonnegative().default(0),
+  typing_duration_ms: z.number().int().nonnegative().default(0),
+  was_edited_after_paste: z.boolean().default(false),
+  delete_count: z.number().int().nonnegative().default(0),
+  revision_count: z.number().int().nonnegative().default(0),
+});
+
+const growthAnswerSchema = z.object({
+  text: z.string().max(700),
+  meta: growthMetaSchema.optional(),
+});
+
+export const growthPathAnswersSchema = z
+  .object({
+    q1: growthAnswerSchema,
+    q2: growthAnswerSchema,
+    q3: growthAnswerSchema,
+    q4: growthAnswerSchema,
+    q5: growthAnswerSchema,
+  })
+  .superRefine((answers, ctx) => {
+    for (const id of GROWTH_QUESTION_IDS) {
+      const { min, max } = GROWTH_CHAR_LIMITS[id];
+      const len = normalizeGrowthText(answers[id].text).length;
+      if (len < min || len > max) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Ответ: от ${min} до ${max} символов (сейчас ${len}).`,
+          path: [id, "text"],
+        });
+      }
+    }
+  });
+
+export const growthPathPageSchema = z.object({
+  answers: growthPathAnswersSchema,
+  consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
+  consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
 });

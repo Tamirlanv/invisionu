@@ -1,13 +1,17 @@
 """Pydantic validation for application section JSON payloads."""
 
+from __future__ import annotations
+
 import re
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from invision_api.models.enums import SectionKey
+from invision_api.services.growth_path.config import GROWTH_CHAR_LIMITS, GROWTH_QUESTION_ORDER
+from invision_api.services.growth_path.normalize import normalize_growth_text
 
 _DD_MM_YYYY = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$")
 
@@ -155,9 +159,97 @@ class MotivationGoalsSectionPayload(BaseModel):
         return v
 
 
+class GrowthAnswerMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    was_pasted: bool = False
+    paste_count: int = Field(default=0, ge=0)
+    last_pasted_at: datetime | None = None
+    typing_count: int = Field(default=0, ge=0)
+    typing_duration_ms: int = Field(default=0, ge=0)
+    was_edited_after_paste: bool = False
+    delete_count: int = Field(default=0, ge=0)
+    revision_count: int = Field(default=0, ge=0)
+
+    @field_validator("last_pasted_at", mode="before")
+    @classmethod
+    def parse_last_pasted_at_growth(cls, v: Any) -> datetime | None:
+        if v is None or v == "":
+            return None
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
+        return v
+
+
+class GrowthAnswerPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    text: str = Field(default="", max_length=700)
+    meta: GrowthAnswerMeta | None = None
+
+
 class GrowthJourneySectionPayload(BaseModel):
-    narrative: str = Field(min_length=50, max_length=8000)
+    """Пять ответов о траектории роста; согласия как на других вкладках."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    answers: dict[str, GrowthAnswerPayload]
+    consent_privacy: bool = False
+    consent_parent: bool = False
     growth_document_id: UUID | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_and_normalize_answers(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        if "answers" not in out and out.get("narrative") is not None:
+            n = str(out.get("narrative") or "")
+            out["answers"] = {
+                "q1": {"text": n},
+                "q2": {"text": "." * GROWTH_CHAR_LIMITS["q2"][0]},
+                "q3": {"text": "." * GROWTH_CHAR_LIMITS["q3"][0]},
+                "q4": {"text": "." * GROWTH_CHAR_LIMITS["q4"][0]},
+                "q5": {"text": "." * GROWTH_CHAR_LIMITS["q5"][0]},
+            }
+        ans = out.get("answers")
+        if isinstance(ans, dict):
+            for qid in GROWTH_QUESTION_ORDER:
+                if qid not in ans:
+                    lo, _ = GROWTH_CHAR_LIMITS[qid]
+                    ans[qid] = {"text": "." * lo}
+            for k, v in list(ans.items()):
+                if isinstance(v, dict) and "text" in v:
+                    nv = dict(v)
+                    nv["text"] = normalize_growth_text(str(nv.get("text") or ""))
+                    ans[k] = nv
+            out["answers"] = ans
+        return out
+
+    @model_validator(mode="after")
+    def _check_question_ranges(self) -> GrowthJourneySectionPayload:
+        for qid in GROWTH_QUESTION_ORDER:
+            if qid not in self.answers:
+                raise ValueError(f"missing answer {qid}")
+            t = self.answers[qid].text
+            lo, hi = GROWTH_CHAR_LIMITS[qid]
+            if len(t) < lo or len(t) > hi:
+                raise ValueError(f"invalid length for {qid}")
+        return self
+
+
+def growth_journey_section_complete(v: GrowthJourneySectionPayload) -> bool:
+    if not v.consent_privacy or not v.consent_parent:
+        return False
+    for qid in GROWTH_QUESTION_ORDER:
+        t = v.answers[qid].text
+        lo, hi = GROWTH_CHAR_LIMITS[qid]
+        if len(t) < lo or len(t) > hi:
+            return False
+    return True
 
 
 class InternalTestSectionPayload(BaseModel):

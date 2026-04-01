@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 
-export function LogoutButton() {
+type LogoutButtonProps = {
+  /** По умолчанию — кнопка `.btn.secondary`; для футера анкеты — текстовая ссылка. */
+  className?: string;
+};
+
+export function LogoutButton({ className }: LogoutButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +25,7 @@ export function LogoutButton() {
   }
 
   return (
-    <button type="button" className="btn secondary" onClick={() => void logout()} disabled={loading}>
+    <button type="button" className={className ?? "btn secondary"} onClick={() => void logout()} disabled={loading}>
       {loading ? "Выход…" : "Выйти"}
     </button>
   );

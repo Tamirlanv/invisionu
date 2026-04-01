@@ -1,6 +1,15 @@
 from fastapi import APIRouter
 
-from invision_api.api.v1.routes import auth, candidates, documents, health, internal_admissions, internal_test
+from invision_api.api.v1.routes import (
+    auth,
+    candidates,
+    commission,
+    documents,
+    health,
+    internal_admissions,
+    internal_test,
+    link_validation,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -13,3 +22,5 @@ api_router.include_router(
     prefix="/internal/admissions",
     tags=["internal-admissions"],
 )
+api_router.include_router(commission.router, prefix="/commission", tags=["commission"])
+api_router.include_router(link_validation.router, prefix="/links", tags=["link-validation"])

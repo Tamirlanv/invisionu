@@ -136,7 +136,7 @@ export default function SocialStatusPage() {
         />
       </div>
 
-      <Link className="btn secondary" href="/application/review" style={{ alignSelf: "flex-start" }}>
+      <Link className="btn" href="/application/review" style={{ alignSelf: "flex-start" }}>
         Далее: проверка
       </Link>
     </div>

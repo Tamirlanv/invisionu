@@ -29,6 +29,7 @@ from invision_api.repositories.application_repository import (
     get_candidate_profile_by_user,
 )
 from invision_api.services import section_payloads
+from invision_api.services.growth_path.pipeline import process_growth_journey_save
 
 
 def _dt_from_date(d: date | None) -> datetime | None:
@@ -111,7 +112,8 @@ def compute_section_complete(
         case SectionKey.motivation_goals:
             return isinstance(validated, section_payloads.MotivationGoalsSectionPayload)
         case SectionKey.growth_journey:
-            return isinstance(validated, section_payloads.GrowthJourneySectionPayload)
+            g = validated if isinstance(validated, section_payloads.GrowthJourneySectionPayload) else None
+            return bool(g and section_payloads.growth_journey_section_complete(g))
         case SectionKey.internal_test:
             return _internal_test_complete(db, app.id)
         case SectionKey.social_status_cert:
@@ -265,11 +267,13 @@ def save_section(
     elif section_key == SectionKey.growth_journey:
         g = validated if isinstance(validated, section_payloads.GrowthJourneySectionPayload) else None
         if not g:
-            raise HTTPException(status_code=400, detail="Некорректные данные раздела «Рост»")
+            raise HTTPException(status_code=400, detail="Некорректные данные раздела «Путь»")
         _validate_optional_motivation_growth_doc(
             db, app.id, g.growth_document_id, DocumentType.growth_journey_upload.value
         )
+        computed = process_growth_journey_save(db, app.id, g)
         out_payload = g.model_dump(mode="json")
+        out_payload["computed"] = computed
     elif section_key == SectionKey.internal_test:
         it = validated if isinstance(validated, section_payloads.InternalTestSectionPayload) else None
         if not it:

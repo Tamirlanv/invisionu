@@ -8,8 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from invision_api.core.redis_client import get_redis_client
+from invision_api.commission.domain.types import CommissionRole
 from invision_api.core.security import decode_token
 from invision_api.db.session import get_db
+from invision_api.models.commission import CommissionUser
 from invision_api.models.enums import RoleName
 from invision_api.models.user import Role, User, UserRole
 
@@ -56,6 +58,41 @@ def require_roles(*roles: RoleName) -> Callable[..., User]:
         user_role_names = set(db.scalars(stmt).all())
         if not allowed.intersection(user_role_names):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+        return user
+
+    return _dep
+
+
+_COMMISSION_ROLE_LEVEL: dict[str, int] = {
+    CommissionRole.viewer.value: 1,
+    CommissionRole.reviewer.value: 2,
+    CommissionRole.admin.value: 3,
+}
+
+
+def require_commission_role(min_role: CommissionRole) -> Callable[..., User]:
+    """
+    Two-layer guard:
+    1) global role must be committee/admin
+    2) commission_users.role must be >= min_role
+    """
+
+    def _dep(
+        db: Annotated[Session, Depends(get_db)],
+        user: Annotated[User, Depends(require_roles(RoleName.committee, RoleName.admin))],
+    ) -> User:
+        row = db.get(CommissionUser, user.id)
+        if not row:
+            # Bootstrap fallback: global admin is treated as commission admin.
+            role_stmt = select(Role.name).join(UserRole, UserRole.role_id == Role.id).where(UserRole.user_id == user.id)
+            global_roles = set(db.scalars(role_stmt).all())
+            if RoleName.admin.value in global_roles:
+                return user
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет роли комиссии")
+        want = _COMMISSION_ROLE_LEVEL[min_role.value]
+        have = _COMMISSION_ROLE_LEVEL.get(row.role, 0)
+        if have < want:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав комиссии")
         return user
 
     return _dep

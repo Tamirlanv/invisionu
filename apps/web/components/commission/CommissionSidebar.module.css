@@ -1,0 +1,149 @@
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 256px;
+  background: #fff;
+  border-right: 1px solid #f1f1f1;
+  z-index: 10;
+  transition: width 0.25s ease;
+}
+
+.expanded {
+  width: 256px;
+}
+
+.collapsed {
+  width: 84px;
+}
+
+.inner {
+  padding: 35px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  color: #262626;
+  font-size: 16px;
+}
+
+.headerText {
+  white-space: nowrap;
+}
+
+.headerSelectBtn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: inherit;
+  font-size: inherit;
+}
+
+.chevronIcon {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(0deg);
+  transition: transform 0.2s ease;
+}
+
+.chevronIconOpen {
+  transform: rotate(180deg);
+}
+
+.headerMenu {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  background: #fff;
+  border: 1px solid #f1f1f1;
+  border-radius: 10px;
+  box-shadow: none;
+  min-width: 170px;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.headerMenuItem {
+  width: 100%;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: #262626;
+  font-size: 14px;
+}
+
+.headerMenuItem:hover {
+  background: #f7f7f7;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  color: #626262;
+  margin: 0 0 4px;
+}
+
+.item {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #262626;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.item:hover {
+  background: #f9f9f9;
+}
+
+.active {
+  color: #1d3a00;
+}
+
+.itemLabel {
+  white-space: nowrap;
+}
+
+.collapsed .inner {
+  padding: 20px 12px;
+}
+
+.collapsed .headerText,
+.collapsed .chevronIcon,
+.collapsed .headerMenu,
+.collapsed .sectionTitle,
+.collapsed .itemLabel {
+  display: none;
+}
+
+.collapsed .item {
+  justify-content: center;
+  padding: 10px 8px;
+}

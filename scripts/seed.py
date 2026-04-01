@@ -10,11 +10,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "apps", "api", "src"))
 
 import uuid
+from datetime import UTC, datetime
 from sqlalchemy import select
 
+from invision_api.core.security import hash_password
 from invision_api.db.session import SessionLocal
 from invision_api.models.application import InternalTestQuestion
 from invision_api.models.enums import QuestionCategory, QuestionType, RoleName
+from invision_api.models.commission import CommissionUser
+from invision_api.models.user import User, UserRole
+from invision_api.repositories import user_repository
 from invision_api.repositories.role_repository import ensure_role
 
 def _personality_question_ids() -> list[str]:
@@ -388,6 +393,72 @@ def seed_questions() -> None:
         db.close()
 
 
+def seed_commission_user() -> None:
+    """
+    Idempotent local/dev onboarding seed for commission login.
+    Uses env vars:
+      - COMMISSION_SEED_EMAIL (default: commission@example.com)
+      - COMMISSION_SEED_ROLE (viewer|reviewer|admin; default: admin)
+      - COMMISSION_SEED_PASSWORD (optional; if omitted, keep existing password or use a dev default)
+    """
+    email = (
+        os.getenv("COMMISSION_SEED_EMAIL")
+        or os.getenv("COMMISSION_LOGIN")
+        or "commission@example.com"
+    ).strip().lower()
+    commission_role = os.getenv("COMMISSION_SEED_ROLE", "admin").strip().lower()
+    seed_password = (
+        os.getenv("COMMISSION_SEED_PASSWORD")
+        or os.getenv("COMMISSION_PASSWORD")
+        or ""
+    ).strip() or "DevCommission123!"
+
+    if commission_role not in {"viewer", "reviewer", "admin"}:
+        raise ValueError("COMMISSION_SEED_ROLE must be one of: viewer|reviewer|admin")
+
+    db = SessionLocal()
+    try:
+        user = user_repository.get_user_by_email(db, email)
+        if not user:
+            user = User(
+                email=email,
+                hashed_password=hash_password(seed_password),
+                is_active=True,
+                email_verified_at=datetime.now(tz=UTC),
+            )
+            db.add(user)
+            db.flush()
+            print(f"Created commission user: {email}")
+        else:
+            user.is_active = True
+            if not user.email_verified_at:
+                user.email_verified_at = datetime.now(tz=UTC)
+            # Keep existing password by default; explicit env can rotate it.
+            if os.getenv("COMMISSION_SEED_PASSWORD") or os.getenv("COMMISSION_PASSWORD"):
+                user.hashed_password = hash_password(seed_password)
+                print(f"Updated commission user password: {email}")
+
+        global_role = RoleName.admin if commission_role == "admin" else RoleName.committee
+        role = ensure_role(db, global_role)
+        existing_user_role = db.scalars(
+            select(UserRole).where(UserRole.user_id == user.id, UserRole.role_id == role.id)
+        ).first()
+        if not existing_user_role:
+            db.add(UserRole(user_id=user.id, role_id=role.id))
+
+        comm = db.get(CommissionUser, user.id)
+        if not comm:
+            db.add(CommissionUser(user_id=user.id, role=commission_role))
+        else:
+            comm.role = commission_role
+
+        db.commit()
+        print(f"Commission role ensured: {email} -> {commission_role}")
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     seed_roles()
     seed_questions()
+    seed_commission_user()

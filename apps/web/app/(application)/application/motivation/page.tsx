@@ -233,7 +233,7 @@ export default function MotivationPage() {
         <button type="button" className="btn secondary" onClick={() => void saveDraft()} disabled={isSubmitting}>
           Сохранить черновик
         </button>
-        <button type="submit" className="btn" disabled={isSubmitting || !localValidation.isValid}>
+        <button type="submit" className="btn" disabled={isSubmitting}>
           {isSubmitting ? "Сохранение…" : "Далее"}
         </button>
       </div>

@@ -19,7 +19,7 @@ type Form = z.infer<typeof loginSchema>;
 function LoginFormInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  const next = params.get("next");
   const [err, setErr] = useState<string | null>(null);
   const {
     control,
@@ -34,7 +34,23 @@ function LoginFormInner() {
     setErr(null);
     try {
       await apiFetch("/auth/login", { method: "POST", json: data });
-      router.replace(next);
+
+      // If "next" was explicitly requested by middleware, honor it.
+      if (next) {
+        router.replace(next);
+        router.refresh();
+        return;
+      }
+
+      // Role-aware default landing:
+      // - commission users -> /commission
+      // - candidate users -> /application/personal
+      try {
+        await apiFetch("/commission/me");
+        router.replace("/commission");
+      } catch {
+        router.replace("/application/personal");
+      }
       router.refresh();
     } catch (e) {
       if (e instanceof ApiError) {

@@ -7,7 +7,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-frontend install-api infra frontend backend worker migrate init-db seed docker-up docker-down smoke
+.PHONY: help install install-frontend install-api infra frontend backend worker migrate init-db seed docker-up docker-down smoke smoke-services
 
 help:
 	@echo "inVision U — commands"
@@ -18,7 +18,7 @@ help:
 	@echo ""
 	@echo "  make infra            - docker compose: postgres + redis (detached)"
 	@echo "  make frontend         - Next.js dev (port 3000)"
-	@echo "  make backend          - FastAPI uvicorn --reload (port 8000)"
+	@echo "  make backend          - FastAPI + auto-start validation services + migrations/seed"
 	@echo "  make worker           - Redis job worker (scaffold)"
 	@echo ""
 	@echo "  make migrate          - alembic upgrade head"
@@ -28,6 +28,7 @@ help:
 	@echo "  make docker-up        - docker compose up --build (full stack)"
 	@echo "  make docker-down      - docker compose down"
 	@echo "  make smoke            - pytest (API) + vitest (web)"
+	@echo "  make smoke-services   - HTTP smoke for backend + validation services"
 	@echo ""
 	@echo "Direct scripts (same as above): ./scripts/frontend.sh, ./scripts/backend.sh, …"
 
@@ -68,3 +69,6 @@ docker-down:
 
 smoke:
 	@bash scripts/smoke.sh
+
+smoke-services:
+	@bash scripts/smoke-services.sh

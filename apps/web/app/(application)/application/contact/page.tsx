@@ -207,10 +207,10 @@ export default function ContactPage() {
       {msg && <p className="muted">{msg}</p>}
 
       <div className={formStyles.formFooter}>
-        <button className="btn" type="submit" disabled={isSubmitting}>
+        <button className="btn secondary" type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Сохранение…" : "Сохранить"}
         </button>
-        <Link className="btn secondary" href="/application/education">
+        <Link className="btn" href="/application/education">
           Далее
         </Link>
       </div>

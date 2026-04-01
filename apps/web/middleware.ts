@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const protectedPrefixes = ["/dashboard", "/application"];
+const protectedPrefixes = ["/dashboard", "/application", "/commission"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -20,5 +20,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/application/:path*"],
+  matcher: ["/dashboard/:path*", "/application/:path*", "/commission/:path*"],
 };

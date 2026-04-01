@@ -394,7 +394,7 @@
   text-decoration: underline;
 }
 
-/* Футер формы анкеты: primary + secondary (глобальные классы .btn) */
+/* Футер анкеты: «Далее» — .btn (чёрная), не блокировать по валидации; черновик — .btn.secondary */
 .formFooter {
   display: flex;
   justify-content: flex-end;

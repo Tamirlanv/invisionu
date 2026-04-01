@@ -98,7 +98,7 @@ export default function RegisterAccountPage() {
         json: { email: pendingEmail, code: data.code },
       });
       clearRegisterFlow();
-      router.replace("/dashboard?welcome=1");
+      router.replace("/application/personal?welcome=1");
       router.refresh();
     } catch (e) {
       if (e instanceof ApiError) {

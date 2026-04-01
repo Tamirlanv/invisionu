@@ -7,6 +7,7 @@ import { PERSONALITY_QUESTIONS, type AnswerKey, type Lang } from "@/lib/personal
 import { Divider } from "@/components/application/Divider";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
 import { PillSegmentedControl } from "@/components/application/PillSegmentedControl";
+import formStyles from "@/components/application/form-ui.module.css";
 import styles from "./page.module.css";
 
 export default function InternalTestPage() {
@@ -171,14 +172,14 @@ export default function InternalTestPage() {
         </p>
       ) : null}
 
-      <section className={styles.actions}>
+      <section className={`${styles.actions} ${formStyles.formFooter}`}>
         <button className="btn secondary" type="button" onClick={() => void saveDraft()} disabled={saving || submitting}>
           {saving ? "Сохранение..." : "Сохранить черновик"}
         </button>
-        <button className="btn" type="button" onClick={() => void submitFinal()} disabled={saving || submitting}>
+        <button className="btn secondary" type="button" onClick={() => void submitFinal()} disabled={saving || submitting}>
           {submitting ? "Отправка..." : "Отправить тест"}
         </button>
-        <Link className="btn secondary" href="/application/motivation">
+        <Link className="btn" href="/application/motivation">
           Далее
         </Link>
       </section>

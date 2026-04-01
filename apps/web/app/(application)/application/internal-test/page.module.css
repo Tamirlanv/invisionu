@@ -167,10 +167,6 @@
 
 .actions {
   margin-top: 24px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 @media (max-width: 1200px) {

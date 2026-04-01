@@ -6,6 +6,7 @@ Policy:
 - Outputs are assistive (summaries, explainability, risk signals) and stored for human review.
 """
 
+import json
 from typing import Any, Protocol
 
 from openai import OpenAI
@@ -21,6 +22,15 @@ class AIProvider(Protocol):
     def explainability_flags(self, *, prompt_version: str, context: dict[str, Any]) -> dict[str, Any]: ...
 
     def authenticity_risk(self, *, prompt_version: str, context: dict[str, Any]) -> float | None: ...
+
+    def committee_structured_summary(
+        self,
+        *,
+        prompt_version: str,
+        compact_payload: dict[str, Any],
+        system_prompt: str,
+        user_message: str,
+    ) -> dict[str, Any]: ...
 
 
 class OpenAIProvider:
@@ -91,6 +101,28 @@ class OpenAIProvider:
             return float(raw)
         except ValueError:
             return None
+
+    def committee_structured_summary(
+        self,
+        *,
+        prompt_version: str,
+        compact_payload: dict[str, Any],
+        system_prompt: str,
+        user_message: str,
+    ) -> dict[str, Any]:
+        _ = (prompt_version, len(compact_payload))
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.2,
+            timeout=90.0,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        return json.loads(text)
 
 
 def get_ai_provider() -> OpenAIProvider:

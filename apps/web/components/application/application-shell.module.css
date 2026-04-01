@@ -3,7 +3,6 @@
   background: #fff;
   display: flex;
   flex-direction: column;
-  padding-bottom: 48px;
   /* Единый горизонтальный отступ для шапки, sticky и ряда main|sidebar */
   --application-page-padding-x: 80px;
   /* 352px сайдбар + 80px gap — чтобы слайдер вкладок совпадал по ширине с колонкой формы */
@@ -11,6 +10,7 @@
 }
 
 .layoutRow {
+  flex: 1 1 auto;
   display: flex;
   gap: 80px;
   padding: 0 var(--application-page-padding-x, 80px);
