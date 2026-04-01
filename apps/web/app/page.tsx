@@ -7,7 +7,7 @@ const RESOURCES = [
     title: "GitHub",
     description: "Ссылка на репозитрий проекта, с описаним архитектуры и исходным кодом",
     button: "GitHub inVision",
-    link: "https://github.com/mi-llen-nial/inVisionU",
+    link: "https://github.com/inVisionKOMO",
   },
   {
     title: "Google Disk – Презентация",
@@ -25,7 +25,7 @@ const RESOURCES = [
     title: "Telegram Bot",
     description: "Ссылка на bot проекта, с возможностью задать дополнительные вопросы нашей поддержки и использовать мобильную версию MiniApp",
     button: "Telegram",
-    link: "https://telegram.org",
+    link: "https://t.me/inVisionUApp_bot",
   },
 ] as const;
 

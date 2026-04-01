@@ -109,24 +109,19 @@ class EducationSectionPayload(BaseModel):
     additional_document_id: UUID | None = None
 
 
-class AchievementActivityItem(BaseModel):
-    category: str = Field(min_length=1, max_length=128)
-    title: str = Field(min_length=1, max_length=255)
-    organization: str | None = Field(default=None, max_length=255)
-    start_date: date | None = None
-    end_date: date | None = None
-    role: str | None = Field(default=None, max_length=255)
-    impact_summary: str | None = Field(default=None, max_length=2000)
-    reference_contact: str | None = Field(default=None, max_length=500)
-
-    @field_validator("start_date", "end_date", mode="before")
-    @classmethod
-    def parse_activity_dates(cls, v: Any) -> date | None:
-        return parse_optional_date(v)
+class AchievementLinkItem(BaseModel):
+    link_type: str = Field(max_length=32)
+    label: str = Field(max_length=64)
+    url: str = Field(default="", max_length=4096)
 
 
 class AchievementsActivitiesSectionPayload(BaseModel):
-    activities: list[AchievementActivityItem] = Field(min_length=1, max_length=50)
+    achievements_text: str = Field(min_length=1, max_length=500)
+    role: str = Field(default="", max_length=50)
+    year: str = Field(default="", max_length=4)
+    links: list[AchievementLinkItem] = Field(default_factory=list, max_length=8)
+    consent_privacy: bool = False
+    consent_parent: bool = False
 
 
 class LeadershipEvidenceItem(BaseModel):

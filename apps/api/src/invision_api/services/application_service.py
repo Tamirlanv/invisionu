@@ -105,7 +105,7 @@ def compute_section_complete(
             )
         case SectionKey.achievements_activities:
             a = validated if isinstance(validated, section_payloads.AchievementsActivitiesSectionPayload) else None
-            return bool(a and len(a.activities) >= 1)
+            return bool(a and len(a.achievements_text.strip()) >= 250)
         case SectionKey.leadership_evidence:
             l = validated if isinstance(validated, section_payloads.LeadershipEvidenceSectionPayload) else None
             return bool(l and len(l.items) >= 1)

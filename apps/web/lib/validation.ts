@@ -178,3 +178,38 @@ export const growthPathPageSchema = z.object({
   consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
   consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
 });
+
+const achievementLinkSchema = z.object({
+  link_type: z.string().max(32),
+  label: z.string().max(64),
+  url: z
+    .string()
+    .max(4096)
+    .refine((v) => !v.trim() || /^https?:\/\/.+/i.test(v.trim()), {
+      message: "Укажите корректную ссылку (https://…)",
+    }),
+});
+
+export const achievementsSchema = z.object({
+  achievements_text: z
+    .string()
+    .min(250, { message: "Минимальный объем описания — 250 символов." })
+    .max(500, { message: "Максимальный объем — 500 символов." }),
+  role: z.string().max(50).optional().or(z.literal("")),
+  year: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (v) => {
+        if (!v || !v.trim()) return true;
+        if (!/^\d{4}$/.test(v.trim())) return false;
+        const n = Number(v.trim());
+        return n >= 2000 && n <= 2035;
+      },
+      { message: "Укажите год в диапазоне 2000–2035" },
+    ),
+  links: z.array(achievementLinkSchema).max(8).default([]),
+  consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
+  consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
+});

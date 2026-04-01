@@ -1,0 +1,227 @@
+.sectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 550;
+  line-height: 20px;
+  letter-spacing: -0.6px;
+  color: #262626;
+}
+
+.sectionDesc {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #626262;
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 550;
+  line-height: 20px;
+  letter-spacing: -0.6px;
+  color: #262626;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 110px;
+  max-height: 210px;
+  resize: vertical;
+  border: 1px solid #e1e1e1;
+  border-radius: 16px;
+  padding: 24px;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 20px;
+  color: #262626;
+  font-family: inherit;
+  letter-spacing: -0.42px;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #98da00;
+  box-shadow: 0 0 0 3px rgba(152, 218, 0, 0.12);
+}
+
+.textarea::placeholder {
+  color: #e1e1e1;
+}
+
+.counterRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.counter,
+.counterHint {
+  color: #626262;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+}
+
+.roleYearRow {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.roleYearRow > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.fieldLabel {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #262626;
+}
+
+.fieldInput {
+  background: #fff;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  padding: 0 16px;
+  min-height: 38px;
+  height: 38px;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #262626;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fieldInput::placeholder {
+  color: #e1e1e1;
+}
+
+.fieldInput:hover:not(:disabled) {
+  border-color: #c8c8c8;
+}
+
+.fieldInput:focus {
+  outline: none;
+  border-color: #98da00;
+  box-shadow: 0 0 0 3px rgba(152, 218, 0, 0.12);
+}
+
+.linkField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.linkLabel {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #626262;
+}
+
+.linkInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.linkInputRow > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.deleteLinkBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #e1e1e1;
+  background: #fff;
+  color: #ee5050;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.deleteLinkBtn:hover {
+  background: #fff5f5;
+  border-color: #fecaca;
+}
+
+.addLinkBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: none;
+  background: #fff;
+  color: #262626;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  font-family: inherit;
+  cursor: pointer;
+  align-self: center;
+  transition: background 0.2s ease;
+}
+
+.addLinkBtn:hover {
+  background: #f5f5f5;
+}
+
+.addLinkBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.addLinkIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .roleYearRow {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
