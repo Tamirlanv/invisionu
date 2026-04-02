@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, bustApiCache, ApiError } from "@/lib/api-client";
 import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
-import { PERSONALITY_QUESTIONS, type AnswerKey, type Lang } from "@/lib/personality-profile";
+import {
+  PERSONALITY_QUESTIONS,
+  buildInternalTestAnswerPayload,
+  buildPersonalityQuestionMappings,
+  mapServerAnswersToUiRecord,
+  type AnswerKey,
+  type Lang,
+  type ServerInternalTestQuestion,
+} from "@/lib/personality-profile";
 import { Divider } from "@/components/application/Divider";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
 import { PillSegmentedControl } from "@/components/application/PillSegmentedControl";
@@ -39,6 +47,12 @@ export default function InternalTestPage() {
   const [consentPrivacy, setConsentPrivacy] = useState(false);
   const [consentParent, setConsentParent] = useState(false);
   const [consentErrors, setConsentErrors] = useState({ privacy: false, parent: false });
+  const [syncState, setSyncState] = useState<"loading" | "ready" | "error">("loading");
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [maps, setMaps] = useState<{
+    uiToServer: Map<string, string>;
+    serverToUi: Map<string, string>;
+  } | null>(null);
 
   const questions = PERSONALITY_QUESTIONS;
   const total = questions.length;
@@ -65,22 +79,41 @@ export default function InternalTestPage() {
       }
 
       try {
-        const saved = await apiFetch<SavedAnswersResponse>("/internal-test/answers");
+        const serverQs = await apiFetch<ServerInternalTestQuestion[]>("/internal-test/questions");
         if (cancelled) return;
-        const fromApi = (saved.answers ?? []).reduce<Record<string, AnswerKey | undefined>>((acc, item) => {
-          const first = item.selected_options?.[0];
-          if (first && ["A", "B", "C", "D"].includes(first)) {
-            acc[item.question_id] = first as AnswerKey;
+        const mapping = buildPersonalityQuestionMappings(PERSONALITY_QUESTIONS, serverQs);
+
+        if (!mapping.ok) {
+          if (!cancelled) {
+            setSyncError(mapping.error);
+            setSyncState("error");
           }
-          return acc;
-        }, {});
-        setAnswers((prev) => ({ ...fromApi, ...prev }));
-        if (!hasStructuredLocal) {
-          setConsentPrivacy(Boolean(saved.consent_privacy));
-          setConsentParent(Boolean(saved.consent_parent));
+          return;
+        }
+
+        if (!cancelled) {
+          setMaps({ uiToServer: mapping.uiToServer, serverToUi: mapping.serverToUi });
+          setSyncState("ready");
+          setSyncError(null);
+        }
+
+        try {
+          const saved = await apiFetch<SavedAnswersResponse>("/internal-test/answers");
+          if (cancelled) return;
+          const fromApi = mapServerAnswersToUiRecord(mapping.serverToUi, saved.answers ?? []);
+          setAnswers((prev) => ({ ...fromApi, ...prev }));
+          if (!hasStructuredLocal) {
+            setConsentPrivacy(Boolean(saved.consent_privacy));
+            setConsentParent(Boolean(saved.consent_parent));
+          }
+        } catch {
+          // Keep local draft as fallback.
         }
       } catch {
-        // Keep local draft as fallback.
+        if (!cancelled) {
+          setSyncError("Не удалось загрузить вопросы теста. Попробуйте обновить страницу.");
+          setSyncState("error");
+        }
       }
     }
     void load();
@@ -92,11 +125,14 @@ export default function InternalTestPage() {
   async function saveDraft() {
     setMsg(null);
     setIsMsgError(false);
+    if (syncState !== "ready" || !maps) {
+      setMsg(syncError ?? "Тест временно недоступен: рассинхрон вопросов.");
+      setIsMsgError(true);
+      return;
+    }
     setSaving(true);
     saveDraftLocal("internal_test", { answers, consent_privacy: consentPrivacy, consent_parent: consentParent } as DraftShape);
-    const payload = questions
-      .filter((q) => Boolean(answers[q.id]))
-      .map((q) => ({ question_id: q.id, selected_options: [answers[q.id] as AnswerKey] }));
+    const payload = buildInternalTestAnswerPayload(questions, answers, maps.uiToServer);
     try {
       await apiFetch("/internal-test/answers", {
         method: "POST",
@@ -122,11 +158,14 @@ export default function InternalTestPage() {
     }
     setMsg(null);
     setIsMsgError(false);
+    if (syncState !== "ready" || !maps) {
+      setMsg(syncError ?? "Тест временно недоступен: рассинхрон вопросов.");
+      setIsMsgError(true);
+      return;
+    }
     setSaving(true);
     saveDraftLocal("internal_test", { answers, consent_privacy: consentPrivacy, consent_parent: consentParent } as DraftShape);
-    const payload = questions
-      .filter((q) => Boolean(answers[q.id]))
-      .map((q) => ({ question_id: q.id, selected_options: [answers[q.id] as AnswerKey] }));
+    const payload = buildInternalTestAnswerPayload(questions, answers, maps.uiToServer);
     try {
       await apiFetch("/internal-test/answers", {
         method: "POST",
@@ -146,6 +185,11 @@ export default function InternalTestPage() {
   return (
     <div className={styles.root}>
       <section className={styles.intro}>
+        {syncState === "loading" ? (
+          <p className={styles.description} role="status">
+            Загрузка вопросов теста…
+          </p>
+        ) : null}
         <h1 className={styles.title}>Тест на тип личности</h1>
         <p className={styles.description}>
           Правильных или неправильных ответов нет - мы просто хотим лучше понять вас, ваш образ мышления и то, что
@@ -247,6 +291,12 @@ export default function InternalTestPage() {
 
       <Divider />
 
+      {syncState === "error" && syncError ? (
+        <p className="error" role="alert">
+          {syncError}
+        </p>
+      ) : null}
+
       {msg ? (
         <p className={isMsgError ? "error" : styles.successMsg} role="status">
           {msg}
@@ -254,10 +304,15 @@ export default function InternalTestPage() {
       ) : null}
 
       <section className={`${styles.actions} ${formStyles.formFooter}`}>
-        <button className="btn secondary" type="button" onClick={() => void saveDraft()} disabled={saving}>
+        <button
+          className="btn secondary"
+          type="button"
+          onClick={() => void saveDraft()}
+          disabled={saving || syncState !== "ready"}
+        >
           {saving ? "Сохранение..." : "Сохранить черновик"}
         </button>
-        <button className="btn" type="button" onClick={() => void handleNext()} disabled={saving}>
+        <button className="btn" type="button" onClick={() => void handleNext()} disabled={saving || syncState !== "ready"}>
           Далее
         </button>
       </section>
