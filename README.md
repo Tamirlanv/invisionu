@@ -43,8 +43,7 @@ flowchart LR
     Worker[job_worker]
   end
   subgraph llm [LLM]
-    Hoster[LLM endpoint hoster.kz]
-    OpenAICompat[OpenAI API optional]
+    Hoster[Self-hosted LLM hoster.kz]
   end
   Web --> FastAPI
   FastAPI --> PG
@@ -52,7 +51,6 @@ flowchart LR
   Worker --> Redis
   Worker --> PG
   FastAPI --> Hoster
-  FastAPI --> OpenAICompat
 ```
 
 - **Frontend** — Next.js (App Router) in `apps/web`; talks to API via `/api/v1` (rewrites in dev, public URL in prod).
@@ -77,7 +75,7 @@ Additional Node services in `apps/` (e.g. certificate/video validation) support 
 | **Queue / cache** | Redis (sessions revocation, job queue) |
 | **Storage** | Local filesystem under `UPLOAD_ROOT` (swappable for object storage) |
 | **Email** | Resend API for verification mail |
-| **LLM** | OpenAI-compatible client where configured; internal HTTP summarizer for data-check (see §6) |
+| **LLM** | HTTP clients to **self-hosted LLM** on **hoster.kz** (see §6) |
 
 ---
 
@@ -96,10 +94,9 @@ Additional Node services in `apps/` (e.g. certificate/video validation) support 
 
 ## 6. LLM integration
 
-- **Deployment default (production):** HTTP **LLM summarization** for specific tasks (e.g. data-check summaries) is intended to target a **service on hoster.kz** — configure base URL and auth via **`INTERNAL_LLM_SUMMARY_URL`** and optionally **`INTERNAL_LLM_API_KEY`** (see `services/data_check/llm/llm_summary_client.py`).
-- **OpenAI-compatible API:** Other flows (growth path, commission AI pipeline, block analysis) use **`OPENAI_API_KEY`** / **`OPENAI_MODEL`** when set (`services/ai_provider.py`, `commission/ai/`).
-- **Role of the model:** **Auxiliary.** Pipeline order is: **validation → preprocessing → heuristics → compact payloads → optional LLM** for summarization/synthesis/explainable blurbs. **No autonomous admission decision.**
-- **Governance:** Code and copy stress **human-in-the-loop**; schema-validated LLM outputs; audit fields where implemented.
+- **Self-hosted LLM only:** inference goes to **our own LLM deployment** (hosted on **hoster.kz**), not to third-party “chat API” products. Configure base URL, auth, and model id in the API environment to match your service contract—including the data-check HTTP summarizer (`INTERNAL_LLM_SUMMARY_URL` / `INTERNAL_LLM_API_KEY`) and the settings used for growth-path, commission, and block-analysis flows.
+- **Role of the model:** **Auxiliary.** Order of operations: **validation → preprocessing → heuristics → compact payloads → optional LLM** for summaries/synthesis. **No autonomous admission decision.**
+- **Governance:** Human-in-the-loop; LLM outputs schema-validated where implemented; audit fields as provided.
 
 ---
 
@@ -128,8 +125,8 @@ Set environment variables in **`.env` at the repository root** (and/or in the ho
 | `CORS_ORIGINS` | Comma-separated allowed web origins |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Transactional email |
 | `APP_PUBLIC_URL` | Public site URL for links |
-| `OPENAI_API_KEY` / `OPENAI_MODEL` | OpenAI-compatible LLM for API-side features |
-| `INTERNAL_LLM_SUMMARY_URL` / `INTERNAL_LLM_API_KEY` | Internal summarizer HTTP endpoint (e.g. hoster.kz) |
+| `INTERNAL_LLM_SUMMARY_URL` / `INTERNAL_LLM_API_KEY` | Data-check HTTP summarizer → same **self-hosted LLM** (hoster.kz) |
+| Other LLM-related env vars in API | Same deployment: endpoint, credential, model id for growth-path / commission / analysis paths |
 | `UPLOAD_ROOT` | Upload directory for API |
 
 Frontend build/runtime may use `NEXT_PUBLIC_API_URL`, `API_INTERNAL_URL` (see `apps/web` config).
@@ -208,7 +205,7 @@ API `http://localhost:8000`, web `http://localhost:3000`, uploads in `upload_dat
 | **Backend** | **Railway** (or any container host) — build from `infra/docker/Dockerfile.api`; entrypoint runs migrations, `seed_internal_test_questions.py`, then uvicorn. |
 | **Worker** | Separate **Railway** service or second process: same image/env, command running `scripts/job_worker.py` (or equivalent). |
 | **Database / Redis** | Managed Postgres + Redis with URLs wired into API and worker. |
-| **LLM** | **`INTERNAL_LLM_SUMMARY_URL`** pointing at the **hoster.kz** summarizer; **`OPENAI_*`** for OpenAI-compatible routes as needed. |
+| **LLM** | Same **self-hosted** service on **hoster.kz** (endpoint + secrets in API env, including `INTERNAL_LLM_*` for summarizer). |
 
 Redeploy API after schema changes; ensure **both** API and worker share the same `DATABASE_URL` / `REDIS_URL` where applicable.
 
