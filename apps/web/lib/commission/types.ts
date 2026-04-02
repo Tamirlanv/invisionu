@@ -131,8 +131,7 @@ export type CommissionApplicationDetailView = {
     summary?: string | null;
     keyThemes?: string[] | null;
   } | null;
-  portfolio: Record<string, unknown> | null;
-  essay: Record<string, unknown> | null;
+  achievements: Record<string, unknown> | null;
   aiSummary: ApplicationAISummaryView | null;
   validationReport?: ValidationReport | null;
   review: {
@@ -227,6 +226,24 @@ export type CommissionApplicationPersonalInfoView = {
       url: string;
     } | null;
   };
+  motivation: {
+    narrative: string | null;
+  };
+  path: Array<{
+    questionTitle: string;
+    description: string;
+    text: string;
+  }> | null;
+  achievements: {
+    text: string | null;
+    role: string | null;
+    year: string | null;
+    links: Array<{
+      label: string;
+      url: string;
+      linkType: string | null;
+    }>;
+  };
   processingStatus: {
     overall: "pending" | "running" | "partial" | "ready" | "failed";
     completedCount: number;
@@ -283,5 +300,20 @@ export type CommissionSidebarPanelView = {
   type: "validation" | "summary";
   title: string;
   sections: SidebarSection[];
+};
+
+export type ReviewScoreItem = {
+  key: string;
+  label: string;
+  recommendedScore: number;
+  manualScore: number | null;
+  effectiveScore: number;
+};
+
+export type ReviewScoreBlock = {
+  section: string;
+  items: ReviewScoreItem[];
+  totalScore: number;
+  maxTotalScore: number;
 };
 

@@ -134,8 +134,7 @@ def get_application_details(db: Session, application_id: UUID) -> dict:
     education = sections.get("education") if isinstance(sections.get("education"), dict) else {}
     motivation = sections.get("motivation_letter") if isinstance(sections.get("motivation_letter"), dict) else {}
     growth = sections.get("growth_journey") if isinstance(sections.get("growth_journey"), dict) else {}
-    portfolio = sections.get("portfolio") if isinstance(sections.get("portfolio"), dict) else {}
-    essay = sections.get("essay") if isinstance(sections.get("essay"), dict) else {}
+    achievements = sections.get("achievements_activities") if isinstance(sections.get("achievements_activities"), dict) else {}
     internal_test = sections.get("internal_test") if isinstance(sections.get("internal_test"), dict) else {}
 
     answers = growth.get("answers") if isinstance(growth, dict) else None
@@ -202,8 +201,7 @@ def get_application_details(db: Session, application_id: UUID) -> dict:
         }
         if path_answers or (isinstance(growth, dict) and growth.get("computed"))
         else None,
-        "portfolio": portfolio or None,
-        "essay": essay or None,
+        "achievements": achievements or None,
         "aiSummary": {
             "summaryText": ai.summary_text,
             "strengths": ai.strengths,

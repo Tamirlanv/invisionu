@@ -51,7 +51,7 @@ const sectionTitle: React.CSSProperties = {
 };
 
 const STAGE_PILLS = ["Оценка заявки", "Собеседование", "Решение комиссии"] as const;
-const TABS = ["Личная информация", "Тест", "Мотивация", "Путь", "Портфолио", "Эссе"] as const;
+const TABS = ["Личная информация", "Тест", "Мотивация", "Путь", "Достижения"] as const;
 
 export function PersonalInfoSection({ data, moveButton, activeTab, onTabChange }: Props) {
   const { personalInfo } = data;

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CommissionCommentBlock } from "@/components/commission/detail/CommissionCommentBlock";
 import { MoveNextStageButton } from "@/components/commission/detail/MoveNextStageButton";
 import { PersonalInfoSection } from "@/components/commission/detail/PersonalInfoSection";
+import { ReviewScoreBlock } from "@/components/commission/detail/ReviewScoreBlock";
 import { TestInfoSection } from "@/components/commission/detail/TestInfoSection";
 import { ApiError } from "@/lib/api-client";
 import { permissionsFromRole } from "@/lib/commission/permissions";
@@ -16,12 +17,15 @@ import {
   getCommissionApplicationTestInfo,
   getCommissionRole,
   getCommissionSidebarPanel,
+  getSectionReviewScores,
+  saveSectionReviewScores,
 } from "@/lib/commission/query";
 import type {
   CommissionApplicationPersonalInfoView,
-  CommissionApplicationTestInfoView,
   CommissionSidebarPanelView,
+  CommissionApplicationTestInfoView,
   CommissionRole,
+  ReviewScoreBlock as ReviewScoreBlockType,
 } from "@/lib/commission/types";
 import styles from "./page.module.css";
 
@@ -102,6 +106,10 @@ export default function CommissionApplicationDetailPage() {
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const lastSidebarTabRef = useRef<string>("");
 
+  const [sectionScores, setSectionScores] = useState<ReviewScoreBlockType | null>(null);
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const lastScoresTabRef = useRef<string>("");
+
   async function handleDelete() {
     if (!applicationId || deleteRef.current) return;
     if (!confirm("Удалить заявку? Это действие необратимо.")) return;
@@ -169,7 +177,9 @@ export default function CommissionApplicationDetailPage() {
       .finally(() => {
         if (!cancelled) setSidebarLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab, applicationId]);
 
   useEffect(() => {
@@ -190,7 +200,43 @@ export default function CommissionApplicationDetailPage() {
     return () => { cancelled = true; };
   }, [activeTab, applicationId]);
 
+  useEffect(() => {
+    if (!applicationId || activeTab === "Личная информация" || lastScoresTabRef.current === activeTab) return;
+    lastScoresTabRef.current = activeTab;
+    let cancelled = false;
+    setScoresLoading(true);
+    getSectionReviewScores(applicationId!, activeTab)
+      .then((result) => {
+        if (!cancelled) setSectionScores(result);
+      })
+      .catch(() => {
+        if (!cancelled) setSectionScores(null);
+      })
+      .finally(() => {
+        if (!cancelled) setScoresLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, applicationId]);
+
   const permissions = useMemo(() => permissionsFromRole(role), [role]);
+
+  const _TAB_TO_SECTION: Record<string, string> = useMemo(() => ({
+    "Личная информация": "personal",
+    "Тест": "test",
+    "Мотивация": "motivation",
+    "Путь": "path",
+    "Достижения": "achievements",
+  }), []);
+
+  const handleSaveScores = useCallback(
+    async (scores: Array<{ key: string; score: number }>) => {
+      if (!applicationId) return;
+      const section = _TAB_TO_SECTION[activeTab] ?? "personal";
+      const updated = await saveSectionReviewScores(applicationId!, section, scores);
+      setSectionScores(updated);
+    },
+    [applicationId, activeTab, _TAB_TO_SECTION],
+  );
 
   if (loading) {
     return (
@@ -226,10 +272,6 @@ export default function CommissionApplicationDetailPage() {
       </main>
     );
   }
-
-  const processingInProgress =
-    data.processingStatus != null &&
-    (data.processingStatus.overall === "pending" || data.processingStatus.overall === "running");
 
   return (
     <main className={styles.root}>
@@ -270,9 +312,7 @@ export default function CommissionApplicationDetailPage() {
 
           {/* Card 2: Sidebar panel — swaps based on active tab */}
           <section className={styles.sideCard}>
-            <h3 className={styles.aiTitle}>
-              {sidebarPanel?.title ?? "Summary"}
-            </h3>
+            <h3 className={styles.aiTitle}>{sidebarPanel?.title ?? "Summary"}</h3>
             {sidebarLoading ? (
               <p className={styles.aiText}>Загрузка...</p>
             ) : sidebarPanel ? (
@@ -281,15 +321,15 @@ export default function CommissionApplicationDetailPage() {
                   <div key={section.title} style={{ display: "grid", gap: 4 }}>
                     <p className={styles.aiLabel}>{section.title}</p>
                     {section.items.map((item, i) => (
-                      <p key={i} className={styles.aiText}>{item}</p>
+                      <p key={i} className={styles.aiText}>
+                        {item}
+                      </p>
                     ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className={styles.aiText}>
-                {processingInProgress ? "Формируется..." : "Данные недоступны."}
-              </p>
+              <p className={styles.aiText}>Данные недоступны.</p>
             )}
           </section>
 
@@ -327,6 +367,280 @@ export default function CommissionApplicationDetailPage() {
             ) : (
               <p style={{ color: "#626262", fontSize: 14 }}>Данные теста недоступны.</p>
             )
+          )}
+
+          {activeTab === "Мотивация" && (
+            <section style={{ display: "grid", gap: 12 }}>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: 32,
+                  fontWeight: 550,
+                  color: "#262626",
+                  letterSpacing: "-0.96px",
+                  lineHeight: "32px",
+                }}
+              >
+                Мотивационное письмо
+              </h3>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  fontWeight: 350,
+                  color: "#626262",
+                  letterSpacing: "-0.42px",
+                  lineHeight: "14px",
+                }}
+              >
+                Ответ абитуриента
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 350,
+                  color: "#262626",
+                  letterSpacing: "-0.48px",
+                  lineHeight: "22px",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {data.motivation?.narrative ?? "Мотивационное письмо не заполнено."}
+              </p>
+            </section>
+          )}
+
+          {activeTab === "Путь" && (
+            <section style={{ display: "grid", gap: 40 }}>
+              {data.path && data.path.length > 0 ? (
+                data.path.map((item, idx) => (
+                  <div key={idx} style={{ display: "grid", gap: 8 }}>
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: 32,
+                        fontWeight: 550,
+                        color: "#262626",
+                        letterSpacing: "-0.96px",
+                        lineHeight: "32px",
+                      }}
+                    >
+                      {item.questionTitle}
+                    </h3>
+                    <p
+                      style={{
+                        margin: "4px 0 0",
+                        fontSize: 14,
+                        fontWeight: 350,
+                        color: "#626262",
+                        letterSpacing: "-0.42px",
+                        lineHeight: "14px",
+                      }}
+                    >
+                      Ответ абитуриента
+                    </p>
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        fontSize: 16,
+                        fontWeight: 350,
+                        color: "#626262",
+                        letterSpacing: "-0.48px",
+                        lineHeight: "22px",
+                      }}
+                    >
+                      {item.description}
+                    </p>
+                    <p
+                      style={{
+                        margin: "8px 0 0",
+                        fontSize: 16,
+                        fontWeight: 400,
+                        color: "#262626",
+                        letterSpacing: "-0.48px",
+                        lineHeight: "24px",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {item.text}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p style={{ margin: 0, fontSize: 14, color: "#626262" }}>
+                  Раздел «Путь» не заполнен.
+                </p>
+              )}
+            </section>
+          )}
+
+          {activeTab === "Достижения" && (
+            <section style={{ display: "grid", gap: 32 }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: 32,
+                    fontWeight: 550,
+                    color: "#262626",
+                    letterSpacing: "-0.96px",
+                    lineHeight: "32px",
+                  }}
+                >
+                  Описание
+                </h3>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 14,
+                    fontWeight: 350,
+                    color: "#626262",
+                    letterSpacing: "-0.42px",
+                    lineHeight: "14px",
+                  }}
+                >
+                  Ответ абитуриента
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 350,
+                    color: "#262626",
+                    letterSpacing: "-0.48px",
+                    lineHeight: "24px",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {data.achievements?.text ?? "Раздел «Достижения» не заполнен."}
+                </p>
+              </div>
+
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(200px, 1fr))" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 14,
+                      fontWeight: 350,
+                      color: "#626262",
+                      letterSpacing: "-0.42px",
+                      lineHeight: "14px",
+                    }}
+                  >
+                    Роль
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 16,
+                      fontWeight: 350,
+                      color: "#262626",
+                      letterSpacing: "-0.48px",
+                      lineHeight: "16px",
+                    }}
+                  >
+                    {data.achievements?.role ?? "—"}
+                  </p>
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 14,
+                      fontWeight: 350,
+                      color: "#626262",
+                      letterSpacing: "-0.42px",
+                      lineHeight: "14px",
+                    }}
+                  >
+                    Год
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 16,
+                      fontWeight: 350,
+                      color: "#262626",
+                      letterSpacing: "-0.48px",
+                      lineHeight: "16px",
+                    }}
+                  >
+                    {data.achievements?.year ?? "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: 32,
+                    fontWeight: 550,
+                    color: "#262626",
+                    letterSpacing: "-0.96px",
+                    lineHeight: "32px",
+                  }}
+                >
+                  Источники
+                </h3>
+                {data.achievements?.links?.length ? (
+                  <div style={{ display: "grid", gap: 14 }}>
+                    {data.achievements.links.map((ln, idx) => (
+                      <div key={`${ln.url}-${idx}`} style={{ display: "grid", gap: 4 }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 16,
+                            fontWeight: 350,
+                            color: "#262626",
+                            letterSpacing: "-0.48px",
+                            lineHeight: "16px",
+                          }}
+                        >
+                          {ln.label}
+                        </p>
+                        <a
+                          href={ln.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            margin: 0,
+                            fontSize: 16,
+                            fontWeight: 350,
+                            color: "#4facea",
+                            letterSpacing: "-0.48px",
+                            lineHeight: "16px",
+                            textDecoration: "none",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {ln.url}
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 14, color: "#626262" }}>Ссылки не добавлены.</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {activeTab !== "Личная информация" && (
+            scoresLoading ? (
+              <p style={{ color: "#626262", fontSize: 14, marginTop: 16 }}>Загрузка оценок...</p>
+            ) : sectionScores && sectionScores.items.length > 0 ? (
+              <div style={{ marginTop: 24 }}>
+                <ReviewScoreBlock
+                  data={sectionScores}
+                  onSave={handleSaveScores}
+                  canEdit={permissions.canComment}
+                />
+              </div>
+            ) : null
           )}
 
           {permissions.canMove ? (

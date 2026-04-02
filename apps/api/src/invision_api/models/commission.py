@@ -100,6 +100,35 @@ class ReviewRubricScore(Base, TimestampMixin):
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class SectionReviewScore(Base, TimestampMixin):
+    """Per-reviewer numeric scores for each tab section (1-5 scale).
+
+    Stores both platform-recommended and manual override scores.
+    """
+
+    __tablename__ = "section_review_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "application_id", "reviewer_user_id", "section", "score_key",
+            name="uq_section_score",
+        ),
+        Index("ix_section_score_app", "application_id"),
+        Index("ix_section_score_reviewer", "reviewer_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("applications.id", ondelete="CASCADE"), nullable=False
+    )
+    reviewer_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    section: Mapped[str] = mapped_column(String(32), nullable=False)
+    score_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    recommended_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    manual_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class InternalRecommendationRow(Base, TimestampMixin):
     """Per-reviewer internal recommendation within commission (not final decision)."""
 

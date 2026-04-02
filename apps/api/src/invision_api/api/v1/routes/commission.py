@@ -116,6 +116,53 @@ def get_application_sidebar(
     return sidebar_service.get_sidebar_panel(db, application_id=application_id, tab=tab)
 
 
+@router.get("/applications/{application_id}/section-scores")
+def get_section_scores(
+    application_id: UUID,
+    tab: str = "personal",
+    user: User = Depends(require_commission_role(CommissionRole.viewer)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from invision_api.commission.application import section_score_service
+
+    return section_score_service.get_section_scores(
+        db,
+        application_id=application_id,
+        section=tab,
+        reviewer_user_id=user.id,
+    )
+
+
+class SectionScoreItem(BaseModel):
+    key: str
+    score: int = Field(ge=1, le=5)
+
+
+class SaveSectionScoresBody(BaseModel):
+    section: str
+    scores: list[SectionScoreItem]
+
+
+@router.put("/applications/{application_id}/section-scores")
+def save_section_scores(
+    application_id: UUID,
+    body: SaveSectionScoresBody,
+    user: User = Depends(require_commission_role(CommissionRole.reviewer)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from invision_api.commission.application import section_score_service
+
+    result = section_score_service.save_section_scores(
+        db,
+        application_id=application_id,
+        section=body.section,
+        reviewer_user_id=user.id,
+        scores=[{"key": s.key, "score": s.score} for s in body.scores],
+    )
+    db.commit()
+    return result
+
+
 class StageAdvanceBody(BaseModel):
     reason_comment: str | None = None
 

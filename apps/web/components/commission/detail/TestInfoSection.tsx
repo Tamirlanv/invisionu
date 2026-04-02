@@ -7,23 +7,6 @@ type Props = {
   onNext?: () => void;
 };
 
-const TRAIT_LABELS: Record<string, string> = {
-  INI: "Мотивированность",
-  RES: "Лидерские качества",
-  COL: "Уверенность",
-  ADP: "Стрессоустойчивость",
-  REF: "Рефлексивность",
-};
-
-const SCORE_ROW_1_KEYS = ["INI", "RES"] as const;
-const SCORE_ROW_2_KEYS = ["COL", "ADP"] as const;
-const MAX_PER_TRAIT = 5;
-
-function scaleToFive(raw: number, maxRaw: number): number {
-  if (maxRaw <= 0) return 0;
-  return Math.round((raw / maxRaw) * MAX_PER_TRAIT);
-}
-
 const sectionTitle: React.CSSProperties = {
   margin: 0,
   fontSize: 20,
@@ -51,58 +34,11 @@ const valueStyle: React.CSSProperties = {
   lineHeight: "14px",
 };
 
-function ScoreCard({
-  label,
-  value,
-  max,
-  highlight,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: 24,
-        alignItems: "center",
-        padding: 24,
-        borderRadius: 16,
-        border: highlight ? "2px solid #98da00" : "1px solid #f1f1f1",
-        background: "#fff",
-      }}
-    >
-      <p style={{ ...sectionTitle, whiteSpace: "nowrap" }}>{label}</p>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 36,
-          fontWeight: 550,
-          color: "#98da00",
-          letterSpacing: "-1.08px",
-          lineHeight: "36px",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}/{max}
-      </p>
-    </div>
-  );
-}
-
 export function TestInfoSection({ data, onNext }: Props) {
   const profile = data.personalityProfile;
-  const rawScores = profile?.rawScores ?? {};
-
-  const maxTraitRaw = Math.max(...Object.values(rawScores), 1);
 
   const oddQuestions = data.questions.filter((_, i) => i % 2 === 0);
   const evenQuestions = data.questions.filter((_, i) => i % 2 === 1);
-
-  const totalScore = Object.values(rawScores).reduce((a, b) => a + b, 0);
-  const totalMax = Object.keys(rawScores).length * MAX_PER_TRAIT;
 
   return (
     <div style={{ display: "grid", gap: 24, minWidth: 0 }}>
@@ -148,42 +84,6 @@ export function TestInfoSection({ data, onNext }: Props) {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* AI summary heading */}
-      <h2 style={sectionTitle}>ИИ сводка</h2>
-
-      {/* Score cards row 1 */}
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        {SCORE_ROW_1_KEYS.map((key) => (
-          <ScoreCard
-            key={key}
-            label={TRAIT_LABELS[key] ?? key}
-            value={scaleToFive(rawScores[key] ?? 0, maxTraitRaw)}
-            max={MAX_PER_TRAIT}
-          />
-        ))}
-      </div>
-
-      {/* Score cards row 2 + total */}
-      <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-        {SCORE_ROW_2_KEYS.map((key) => (
-          <ScoreCard
-            key={key}
-            label={TRAIT_LABELS[key] ?? key}
-            value={scaleToFive(rawScores[key] ?? 0, maxTraitRaw)}
-            max={MAX_PER_TRAIT}
-          />
-        ))}
-        <ScoreCard
-          label="Итог"
-          value={[...SCORE_ROW_1_KEYS, ...SCORE_ROW_2_KEYS].reduce(
-            (sum, k) => sum + scaleToFive(rawScores[k] ?? 0, maxTraitRaw),
-            0,
-          )}
-          max={totalMax > 0 ? SCORE_ROW_1_KEYS.length * MAX_PER_TRAIT + SCORE_ROW_2_KEYS.length * MAX_PER_TRAIT : 20}
-          highlight
-        />
       </div>
 
       {/* Далее button */}

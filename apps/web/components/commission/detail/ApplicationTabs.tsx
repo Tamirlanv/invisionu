@@ -8,8 +8,7 @@ const TABS = [
   { id: "test", label: "Тест" },
   { id: "motivation", label: "Мотивация" },
   { id: "path", label: "Путь" },
-  { id: "portfolio", label: "Портфолио" },
-  { id: "essay", label: "Эссе" },
+  { id: "achievements", label: "Достижения" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -104,22 +103,12 @@ export function ApplicationTabs({ detail }: { detail: CommissionApplicationDetai
         </div>
       ) : null}
 
-      {tab === "portfolio" ? (
+      {tab === "achievements" ? (
         <div>
-          {detail.portfolio && Object.keys(detail.portfolio).length ? (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 13 }}>{JSON.stringify(detail.portfolio, null, 2)}</pre>
+          {detail.achievements && Object.keys(detail.achievements).length ? (
+            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 13 }}>{JSON.stringify(detail.achievements, null, 2)}</pre>
           ) : (
-            <p className="muted">Портфолио не заполнено.</p>
-          )}
-        </div>
-      ) : null}
-
-      {tab === "essay" ? (
-        <div>
-          {detail.essay && Object.keys(detail.essay).length ? (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 13 }}>{JSON.stringify(detail.essay, null, 2)}</pre>
-          ) : (
-            <p className="muted">Эссе не заполнено.</p>
+            <p className="muted">Достижения не заполнены.</p>
           )}
         </div>
       ) : null}

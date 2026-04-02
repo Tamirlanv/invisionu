@@ -35,6 +35,7 @@ from invision_api.models.commission import (  # noqa: F401
     ExportJob,
     InternalRecommendationRow,
     ReviewRubricScore,
+    SectionReviewScore,
 )
 from invision_api.models.link_validation import LinkValidationResultRow  # noqa: F401
 from invision_api.models.certificate_validation import CertificateValidationResultRow  # noqa: F401

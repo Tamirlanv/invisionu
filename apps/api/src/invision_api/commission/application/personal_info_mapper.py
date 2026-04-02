@@ -183,6 +183,75 @@ def _map_documents(
     return output
 
 
+_GROWTH_QUESTION_TITLES: dict[str, str] = {
+    "q1": "Опыт, оказавший наибольшее влияние на развитие абитуриента",
+    "q2": "Преодоление значимых трудностей",
+    "q3": "Проявление инициативы и ответственности",
+    "q4": "Личностное и профессиональное развитие за последние 1-3 года",
+    "q5": "Ключевые достижения абитуриента",
+}
+
+_GROWTH_QUESTION_DESCRIPTIONS: dict[str, str] = {
+    "q1": "Описание проекта, инициативы или жизненной ситуации, которые существенно повлияли на формирование его взглядов, навыков или мотивации.",
+    "q2": "Описание ситуации, в которой абитуриент столкнулся с серьёзным ограничением или препятствием, а также его подход к решению возникшей проблемы.",
+    "q3": "Пример случая, когда абитуриент самостоятельно инициировал проект, организовал деятельность, улучшил существующий процесс или взял на себя дополнительную ответственность.",
+    "q4": "Описание новых знаний и навыков, которые абитуриент приобрёл за последнее время, а также изменений в его подходе к обучению, работе или саморазвитию.",
+    "q5": "Достижение, которым абитуриент особенно гордится, а также обстоятельства, усилия и значимость этого результата для его дальнейшего развития.",
+}
+
+
+def _map_path_answers(sections: dict[str, Any]) -> list[dict[str, Any]] | None:
+    growth = sections.get("growth_journey") if isinstance(sections.get("growth_journey"), dict) else {}
+    if not isinstance(growth, dict):
+        return None
+    answers = growth.get("answers")
+    if not isinstance(answers, dict):
+        return None
+    result: list[dict[str, Any]] = []
+    for qid in ("q1", "q2", "q3", "q4", "q5"):
+        entry = answers.get(qid)
+        if not isinstance(entry, dict):
+            continue
+        text = str(entry.get("text") or "").strip()
+        if not text:
+            continue
+        result.append({
+            "questionTitle": _GROWTH_QUESTION_TITLES.get(qid, qid),
+            "description": _GROWTH_QUESTION_DESCRIPTIONS.get(qid, ""),
+            "text": text,
+        })
+    return result if result else None
+
+
+def _map_achievements(sections: dict[str, Any]) -> dict[str, Any]:
+    payload = sections.get("achievements_activities") if isinstance(sections.get("achievements_activities"), dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    links_raw = payload.get("links") if isinstance(payload.get("links"), list) else []
+    links: list[dict[str, Any]] = []
+    for item in links_raw:
+        if not isinstance(item, dict):
+            continue
+        url = _str_or_none(item.get("url"))
+        if not url:
+            continue
+        links.append(
+            {
+                "label": _str_or_none(item.get("label")) or _str_or_none(item.get("link_type")) or "Ссылка",
+                "url": url,
+                "linkType": _str_or_none(item.get("link_type")),
+            }
+        )
+
+    return {
+        "text": _str_or_none(payload.get("achievements_text")),
+        "role": _str_or_none(payload.get("role")),
+        "year": _str_or_none(payload.get("year")),
+        "links": links,
+    }
+
+
 def _map_comments(comments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in comments:
@@ -217,6 +286,7 @@ def build_personal_info_view(
     personal = sections.get("personal") if isinstance(sections.get("personal"), dict) else {}
     contact = sections.get("contact") if isinstance(sections.get("contact"), dict) else {}
     education = sections.get("education") if isinstance(sections.get("education"), dict) else {}
+    motivation = sections.get("motivation_goals") if isinstance(sections.get("motivation_goals"), dict) else {}
 
     full_name = projection.candidate_full_name or _build_full_name(
         personal.get("preferred_last_name"),
@@ -286,6 +356,11 @@ def build_personal_info_view(
             "documents": _map_documents(documents=documents, personal=personal, education=education),
             "videoPresentation": {"url": video_url} if video_url else None,
         },
+        "motivation": {
+            "narrative": _str_or_none(motivation.get("narrative")),
+        },
+        "path": _map_path_answers(sections),
+        "achievements": _map_achievements(sections),
         "processingStatus": processing_status,
         "comments": _map_comments(comments),
         "actions": {

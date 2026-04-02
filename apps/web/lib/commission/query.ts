@@ -15,6 +15,7 @@ import type {
   CommissionRole,
   CommissionStage,
   CommissionUpdatesResponse,
+  ReviewScoreBlock,
 } from "./types";
 
 type ApiCard = Record<string, unknown>;
@@ -246,6 +247,30 @@ export async function getCommissionSidebarPanel(
   const queryTab = _TAB_TO_QUERY[tab] ?? "personal";
   return await apiFetch<CommissionSidebarPanelView>(
     `/commission/applications/${applicationId}/sidebar?tab=${encodeURIComponent(queryTab)}`,
+  );
+}
+
+export async function getSectionReviewScores(
+  applicationId: string,
+  tab: string,
+): Promise<ReviewScoreBlock> {
+  const queryTab = _TAB_TO_QUERY[tab] ?? "personal";
+  return await apiFetch<ReviewScoreBlock>(
+    `/commission/applications/${applicationId}/section-scores?tab=${encodeURIComponent(queryTab)}`,
+  );
+}
+
+export async function saveSectionReviewScores(
+  applicationId: string,
+  section: string,
+  scores: Array<{ key: string; score: number }>,
+): Promise<ReviewScoreBlock> {
+  return await apiFetch<ReviewScoreBlock>(
+    `/commission/applications/${applicationId}/section-scores`,
+    {
+      method: "PUT",
+      json: { section, scores },
+    },
   );
 }
 
