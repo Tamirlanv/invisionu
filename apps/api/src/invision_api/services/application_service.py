@@ -1,6 +1,9 @@
+import logging
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
@@ -457,24 +460,61 @@ RESUBMIT_NOT_AVAILABLE_DETAIL = (
     "Повторная отправка доступна только если во втором этапе произошла ошибка запуска обработки."
 )
 
+# Stable codes for logs / API clients (JSON detail); do not remove without updating docs.
+SUBMIT_PIPELINE_CODE_REDIS = "submit_pipeline_redis"
+SUBMIT_PIPELINE_CODE_WORKER = "submit_pipeline_worker"
+SUBMIT_PIPELINE_CODE_ENQUEUE = "submit_queue_enqueue"
+
 
 _WORKER_HEARTBEAT_KEY = "invision:worker:heartbeat"
 
 
+def _submit_pipeline_unavailable_detail(
+    *,
+    code: str,
+    enqueue_context: str | None = None,
+    enqueue_error: str | None = None,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "message": SUBMIT_PIPELINE_UNAVAILABLE_DETAIL,
+        "code": code,
+    }
+    if enqueue_context is not None:
+        out["enqueue_context"] = enqueue_context
+    if enqueue_error is not None:
+        out["enqueue_error"] = enqueue_error[:500]
+    return out
+
+
 def check_submit_pipeline_readiness() -> None:
     if not redis_ping():
+        logger.warning(
+            "submit_readiness_failed reason=redis_unreachable",
+            extra={"submit_readiness_code": SUBMIT_PIPELINE_CODE_REDIS},
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=SUBMIT_PIPELINE_UNAVAILABLE_DETAIL,
+            detail=_submit_pipeline_unavailable_detail(code=SUBMIT_PIPELINE_CODE_REDIS),
         )
     try:
         alive = bool(get_redis_client().exists(_WORKER_HEARTBEAT_KEY))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "submit_readiness_failed reason=worker_heartbeat_check_error error=%s",
+            exc,
+            exc_info=True,
+            extra={"submit_readiness_code": SUBMIT_PIPELINE_CODE_WORKER},
+        )
         alive = False
     if not alive:
+        logger.warning(
+            "submit_readiness_failed reason=worker_heartbeat_missing key=%s",
+            _WORKER_HEARTBEAT_KEY,
+            extra={"submit_readiness_code": SUBMIT_PIPELINE_CODE_WORKER},
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=SUBMIT_PIPELINE_UNAVAILABLE_DETAIL,
+            detail=_submit_pipeline_unavailable_detail(code=SUBMIT_PIPELINE_CODE_WORKER),
         )
 
 
@@ -541,9 +581,20 @@ def submit_application_with_outcome(db: Session, user: User) -> dict[str, Any]:
         nested_tx.commit()
     except job_dispatcher_service.QueueDispatchError as exc:
         nested_tx.rollback()
+        logger.warning(
+            "submit_enqueue_failed application_id=%s context=%s analysis_job_id=%s error=%s",
+            exc.application_id,
+            exc.context,
+            exc.analysis_job_id,
+            exc.error_text,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=SUBMIT_PIPELINE_UNAVAILABLE_DETAIL,
+            detail=_submit_pipeline_unavailable_detail(
+                code=SUBMIT_PIPELINE_CODE_ENQUEUE,
+                enqueue_context=exc.context,
+                enqueue_error=exc.error_text,
+            ),
         ) from exc
     except Exception:
         nested_tx.rollback()

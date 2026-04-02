@@ -209,6 +209,16 @@ API `http://localhost:8000`, web `http://localhost:3000`, uploads in `upload_dat
 
 Redeploy API after schema changes; ensure **both** API and worker share the same `DATABASE_URL` / `REDIS_URL` where applicable.
 
+### Application submit (`POST /candidates/me/application/submit`)
+
+Submit is **blocked with HTTP 503** unless the processing pipeline is considered ready:
+
+1. **Redis** — API must reach Redis (`REDIS_URL`); otherwise the API returns `503` with code `submit_pipeline_redis` (check API logs: `submit_readiness_failed reason=redis_unreachable`).
+2. **Worker** — a separate process must run the job worker ([`scripts/job_worker.py`](scripts/job_worker.py)) with the **same** `REDIS_URL` and `DATABASE_URL`. It refreshes Redis key `invision:worker:heartbeat` (~every 30s). If this key is missing, submit returns `503` with code `submit_pipeline_worker` (logs: `worker_heartbeat_missing`).
+3. **Queue enqueue** — if enqueuing post-submit jobs fails after the above checks, submit returns `503` with code `submit_queue_enqueue` and structured `enqueue_context` / `enqueue_error` in the JSON `detail` for operators.
+
+**Production checklist:** provision Redis → deploy API with `REDIS_URL` → deploy a **second** Railway (or other) service running the worker command → confirm heartbeat exists (e.g. `redis-cli EXISTS invision:worker:heartbeat`). Without worker + Redis, candidates will always see the “service unavailable” message on submit; this is intentional so the application is not marked submitted until jobs can be queued.
+
 ---
 
 ## 11. Notes / important constraints

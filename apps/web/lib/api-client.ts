@@ -47,7 +47,11 @@ export function formatApiErrorBody(data: unknown): string {
         })
         .join(" ");
     }
-    if (d !== null && typeof d === "object") {
+    if (d !== null && typeof d === "object" && !Array.isArray(d)) {
+      const o = d as Record<string, unknown>;
+      if (typeof o.message === "string") {
+        return o.message;
+      }
       return JSON.stringify(d);
     }
     return String(d);

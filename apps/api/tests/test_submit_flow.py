@@ -11,6 +11,7 @@ from invision_api.models.commission import ApplicationCommissionProjection
 from invision_api.models.enums import ApplicationStage, ApplicationState, JobType, SectionKey
 from invision_api.services.application_service import (
     REQUIRED_SECTIONS,
+    SUBMIT_PIPELINE_CODE_WORKER,
     completion_percentage,
     reopen_application_for_resubmit,
     submit_application,
@@ -147,6 +148,10 @@ def test_submit_rejects_when_pipeline_not_ready(db: Session, factory, monkeypatc
     with pytest.raises(HTTPException) as exc_info:
         submit_application(db, user)
     assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail.get("code") == "submit_pipeline_redis"
+    assert "message" in detail
 
     db.expire_all()
     current = db.get(Application, app_id)
@@ -163,6 +168,36 @@ def test_submit_rejects_when_pipeline_not_ready(db: Session, factory, monkeypatc
         )
     ).first()
     assert screening_job is None
+
+
+def test_submit_503_when_worker_heartbeat_missing(db: Session, factory, monkeypatch):
+    """503 with code submit_pipeline_worker when Redis is up but worker heartbeat key is absent."""
+    user = factory.user(db)
+    role = factory.candidate_role(db)
+    factory.assign_role(db, user, role)
+    profile = factory.profile(db, user)
+    app = factory.application(db, profile, state="in_progress")
+    factory.fill_required_sections(db, app)
+    db.commit()
+
+    class _RedisNoHeartbeat:
+        def exists(self, *_args, **_kwargs) -> int:
+            return 0
+
+    monkeypatch.setattr("invision_api.services.application_service.redis_ping", lambda: True)
+    monkeypatch.setattr(
+        "invision_api.services.application_service.get_redis_client",
+        lambda: _RedisNoHeartbeat(),
+    )
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        submit_application(db, user)
+    assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail.get("code") == SUBMIT_PIPELINE_CODE_WORKER
 
 
 def test_submit_outcome_503_and_no_transition_when_enqueue_fails(db: Session, factory, monkeypatch):
@@ -192,6 +227,10 @@ def test_submit_outcome_503_and_no_transition_when_enqueue_fails(db: Session, fa
     with pytest.raises(HTTPException) as exc_info:
         submit_application_with_outcome(db, user)
     assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail.get("code") == "submit_queue_enqueue"
+    assert detail.get("enqueue_context")
 
     db.expire_all()
     current = db.get(Application, app_id)

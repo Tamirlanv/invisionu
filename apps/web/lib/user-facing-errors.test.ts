@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatApiErrorBody } from "./api-client";
 import { getUserFacingMessage } from "./user-facing-errors";
 
 describe("getUserFacingMessage", () => {
@@ -60,4 +61,15 @@ describe("getUserFacingMessage", () => {
     );
   });
 
+  it("extracts message from structured FastAPI detail for submit 503", () => {
+    const msg = formatApiErrorBody({
+      detail: {
+        message: "Сервис обработки заявок временно недоступен. Попробуйте отправить анкету позже.",
+        code: "submit_pipeline_worker",
+      },
+    });
+    expect(getUserFacingMessage(503, msg)).toBe(
+      "Сервис обработки анкеты временно недоступен. Попробуйте отправить позже.",
+    );
+  });
 });
