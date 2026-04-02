@@ -2,7 +2,7 @@
 
 ## 1. Project overview
 
-**inVision U** is a monorepo for a university admissions workflow: candidates submit a structured application, automated checks and a **processing pipeline** produce **derived signals and summaries**, and the **committee** reviews applications in a dedicated UI. **AI/LLM is assistive only**—rules, validation, and human review come first; models never issue final admission decisions.
+**inVision U** is a monorepo for a university admissions workflow: candidates submit a structured application, automated checks and a **processing pipeline** produce **derived signals and summaries**, and the **committee** reviews applications in a dedicated UI. **AI/LLM is assistive only**—rules, validation, and human review come first; models never issue final admission decisions
 
 Components at a glance:
 
