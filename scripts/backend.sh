@@ -66,10 +66,6 @@ echo "Applying migrations (alembic upgrade head)..."
   echo "Migration step failed; aborting backend start." >&2
   exit 1
 }
-echo "Ensuring seed data (roles/questions/commission user)..."
-if ! "$PY" "$REPO_ROOT/scripts/seed.py"; then
-  echo "Seed step failed; aborting backend start." >&2
-  exit 1
-fi
+echo "Tip: run 'make seed' once for roles + internal test questions (commission user is ensured on API startup from env)."
 cd "$REPO_ROOT/apps/api"
 exec "$PY" -m uvicorn invision_api.main:app --reload --host 0.0.0.0 --port 8000

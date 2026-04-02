@@ -18,7 +18,7 @@ help:
 	@echo ""
 	@echo "  make infra            - docker compose: postgres + redis (detached)"
 	@echo "  make frontend         - Next.js dev (port 3000)"
-	@echo "  make backend          - FastAPI + auto-start validation services + migrations/seed"
+	@echo "  make backend          - FastAPI + auto-start validation services + migrations (run make seed for DB seed)"
 	@echo "  make worker           - Redis job worker (admission_jobs queue)"
 	@echo "  make dev              - start backend + worker + frontend together (3 panes)"
 	@echo ""

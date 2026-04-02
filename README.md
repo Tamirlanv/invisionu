@@ -128,6 +128,12 @@ Set environment variables in **`.env` at the repository root** (and/or in the ho
 | `INTERNAL_LLM_SUMMARY_URL` / `INTERNAL_LLM_API_KEY` | Data-check HTTP summarizer → same **self-hosted LLM** (hoster.kz) |
 | Other LLM-related env vars in API | Same deployment: endpoint, credential, model id for growth-path / commission / analysis paths |
 | `UPLOAD_ROOT` | Upload directory for API |
+| `ENVIRONMENT` | `local` (default), `staging`, or `production` — affects commission bootstrap defaults (see below) |
+| `COMMISSION_SEED_EMAIL`, `COMMISSION_ADMIN_EMAIL`, or `COMMISSION_LOGIN` | Email for the initial commission / committee login user |
+| `COMMISSION_SEED_PASSWORD`, `COMMISSION_ADMIN_PASSWORD`, or `COMMISSION_PASSWORD` | Password for that user (in **production**, both email and password must be set for bootstrap to run; no dev defaults) |
+| `COMMISSION_SEED_ROLE` | Optional: `viewer`, `reviewer`, or `admin` (default `admin`) |
+
+On **API startup**, the backend runs an idempotent **commission bootstrap** (see `invision_api.services.commission_bootstrap`): if the user for the configured email does not exist, it is created; if it exists, roles are reconciled and the password is updated only when a password env var is set (local/staging) or when running in production with explicit credentials. This does not depend on shell scripts.
 
 Frontend build/runtime may use `NEXT_PUBLIC_API_URL`, `API_INTERNAL_URL` (see `apps/web` config).
 
@@ -147,8 +153,10 @@ make infra          # docker compose: postgres + redis
 
 ```bash
 make migrate        # alembic upgrade head
-make seed           # roles + internal test questions (+ optional commission seed via scripts/seed.py)
+make seed           # roles + internal test questions (+ commission user via same logic as API startup)
 ```
+
+Run **`make seed` at least once** on a fresh database so roles and the 40 personality internal-test questions exist. The commission user is also ensured when you run `make seed` or when the API process starts (from env; see configuration table above).
 
 If Postgres rejects connections (wrong local role), see [Troubleshooting](#12-troubleshooting).
 
@@ -156,7 +164,7 @@ If Postgres rejects connections (wrong local role), see [Troubleshooting](#12-tr
 
 ```bash
 make install-api
-make backend        # FastAPI on :8000 (see scripts/backend.sh)
+make backend        # FastAPI on :8000 (migrations only; see make seed for DB seed)
 ```
 
 Health: `GET http://localhost:8000/api/v1/health` · Docs: `http://localhost:8000/api/docs`
@@ -202,7 +210,7 @@ API `http://localhost:8000`, web `http://localhost:3000`, uploads in `upload_dat
 | Piece | Typical target |
 |-------|----------------|
 | **Frontend** | **Vercel** — monorepo root with `apps/web` as app root / `pnpm` build (see `vercel.json`). |
-| **Backend** | **Railway** (or any container host) — build from `infra/docker/Dockerfile.api`; entrypoint runs migrations, `seed_internal_test_questions.py`, then uvicorn. |
+| **Backend** | **Railway** (or any container host) — build from `infra/docker/Dockerfile.api`; entrypoint runs migrations, `seed_internal_test_questions.py`, then uvicorn. Set **`COMMISSION_ADMIN_EMAIL`** and **`COMMISSION_ADMIN_PASSWORD`** (or equivalent `COMMISSION_SEED_*` vars) with **`ENVIRONMENT=production`** so the commission user is created on first API startup. |
 | **Worker** | Separate **Railway** service: build with **[`infra/docker/Dockerfile.worker`](infra/docker/Dockerfile.worker)** (Python image). Do **not** use Railpack/Node auto-build for the worker — there is no `python3` there. Same `DATABASE_URL` + `REDIS_URL` as API. |
 | **Database / Redis** | Managed Postgres + Redis with URLs wired into API and worker. |
 | **LLM** | Same **self-hosted** service on **hoster.kz** (endpoint + secrets in API env, including `INTERNAL_LLM_*` for summarizer). |

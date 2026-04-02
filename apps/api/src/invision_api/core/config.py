@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, RedisDsn, field_validator
+from pydantic import AliasChoices, Field, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # config.py: .../apps/api/src/invision_api/core/config.py
@@ -44,6 +44,30 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     environment: Literal["local", "staging", "production"] = "local"
+
+    commission_seed_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "COMMISSION_SEED_EMAIL",
+            "COMMISSION_ADMIN_EMAIL",
+            "COMMISSION_LOGIN",
+        ),
+        description="Commission / committee login email (bootstrap).",
+    )
+    commission_seed_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "COMMISSION_SEED_PASSWORD",
+            "COMMISSION_ADMIN_PASSWORD",
+            "COMMISSION_PASSWORD",
+        ),
+        description="Commission user password; in production both email and password must be set to bootstrap.",
+    )
+    commission_seed_role: str = Field(
+        default="admin",
+        validation_alias=AliasChoices("COMMISSION_SEED_ROLE"),
+        description="viewer | reviewer | admin",
+    )
 
     @field_validator("database_url")
     @classmethod

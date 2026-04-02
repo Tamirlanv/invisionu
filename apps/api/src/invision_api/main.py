@@ -30,6 +30,19 @@ async def _lifespan(_app: FastAPI):
             db.close()
     except Exception as exc:  # noqa: BLE001 — startup must not crash if DB unreachable briefly
         log.warning("internal_test_questions startup check failed: %s", exc)
+
+    try:
+        from invision_api.db.session import SessionLocal
+        from invision_api.services.commission_bootstrap import ensure_commission_user_from_env
+
+        db = SessionLocal()
+        try:
+            ensure_commission_user_from_env(db, get_settings())
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 — startup must not crash if DB unreachable briefly
+        log.warning("commission_bootstrap startup failed: %s", exc)
+
     yield
 
 
