@@ -203,7 +203,7 @@ API `http://localhost:8000`, web `http://localhost:3000`, uploads in `upload_dat
 |-------|----------------|
 | **Frontend** | **Vercel** — monorepo root with `apps/web` as app root / `pnpm` build (see `vercel.json`). |
 | **Backend** | **Railway** (or any container host) — build from `infra/docker/Dockerfile.api`; entrypoint runs migrations, `seed_internal_test_questions.py`, then uvicorn. |
-| **Worker** | Separate **Railway** service or second process: same image/env, command running `scripts/job_worker.py` (or equivalent). |
+| **Worker** | Separate **Railway** service: build with **[`infra/docker/Dockerfile.worker`](infra/docker/Dockerfile.worker)** (Python image). Do **not** use Railpack/Node auto-build for the worker — there is no `python3` there. Same `DATABASE_URL` + `REDIS_URL` as API. |
 | **Database / Redis** | Managed Postgres + Redis with URLs wired into API and worker. |
 | **LLM** | Same **self-hosted** service on **hoster.kz** (endpoint + secrets in API env, including `INTERNAL_LLM_*` for summarizer). |
 
@@ -217,7 +217,21 @@ Submit is **blocked with HTTP 503** unless the processing pipeline is considered
 2. **Worker** — a separate process must run the job worker ([`scripts/job_worker.py`](scripts/job_worker.py)) with the **same** `REDIS_URL` and `DATABASE_URL`. It refreshes Redis key `invision:worker:heartbeat` (~every 30s). If this key is missing, submit returns `503` with code `submit_pipeline_worker` (logs: `worker_heartbeat_missing`).
 3. **Queue enqueue** — if enqueuing post-submit jobs fails after the above checks, submit returns `503` with code `submit_queue_enqueue` and structured `enqueue_context` / `enqueue_error` in the JSON `detail` for operators.
 
-**Production checklist:** provision Redis → deploy API with `REDIS_URL` → deploy a **second** Railway (or other) service running the worker command → confirm heartbeat exists (e.g. `redis-cli EXISTS invision:worker:heartbeat`). Without worker + Redis, candidates will always see the “service unavailable” message on submit; this is intentional so the application is not marked submitted until jobs can be queued.
+**Production checklist:** provision Redis → deploy API with `REDIS_URL` → deploy a **second** Railway service for the worker **via Docker** → confirm heartbeat exists (e.g. `redis-cli EXISTS invision:worker:heartbeat`). Without worker + Redis, candidates will always see the “service unavailable” message on submit; this is intentional so the application is not marked submitted until jobs can be queued.
+
+#### Railway worker service (Docker)
+
+1. Create a **new** Railway service from the **same GitHub repo**.
+2. Set **builder** to **Dockerfile** (not Railpack/Nixpacks Node).
+3. **Dockerfile path:** `infra/docker/Dockerfile.worker` · **root directory:** repository root (`.`).
+4. **Variables:** same `DATABASE_URL` and `REDIS_URL` as the API (and `SECRET_KEY` if your settings load it for DB/session).
+5. **Do not** set a custom start command that runs `python3` on a Node image — that produces `python3: command not found`. The worker image must be built from `Dockerfile.worker` above.
+
+---
+
+### `python3: command not found` on Railway worker
+
+The worker was likely built as a **Node** app (Railpack). Switch that service to build **`infra/docker/Dockerfile.worker`** instead.
 
 ---
 
