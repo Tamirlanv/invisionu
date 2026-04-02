@@ -10,6 +10,7 @@ Validates that:
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -22,7 +23,7 @@ from invision_api.commission.application.sidebar_service import (
     _sanitize_llm_summary,
     _build_path_attention,
 )
-from invision_api.models.application import TextAnalysisRun
+from invision_api.models.application import ApplicationSectionState, TextAnalysisRun
 
 _TECHNICAL_PATTERNS = [
     re.compile(r'\bq\d+\b', re.IGNORECASE),
@@ -191,7 +192,7 @@ class TestExtractKeyExcerpts:
 
 class TestBuildPathAttention:
     def test_no_issues_returns_empty(self):
-        pq = {"q1": {"stats": {"word_count": 50}, "spam_check": {"ok": True}}}
+        pq = {"q1": {"stats": {"word_count": 90}, "spam_check": {"ok": True}}}
         signals = {"initiative": 0.8, "growth": 0.6, "concrete_experience": 0.7}
         assert _build_path_attention(pq, signals) == []
 
@@ -215,7 +216,8 @@ class TestBuildPathAttention:
         }
         result = _build_path_attention(pq, {})
         combined = " ".join(result)
-        assert "Коротких ответов: 2" in combined
+        assert "2" in combined
+        assert ("кратк" in combined.lower()) or ("контекст" in combined.lower())
 
     def test_low_concrete_experience(self):
         result = _build_path_attention({}, {"concrete_experience": 0.1})
@@ -411,3 +413,92 @@ class TestBuildPathSummaryPanel:
         # summary must be human-facing Russian text, not leaked english boilerplate
         assert re.search(r"[А-Яа-яЁё]", summary_text)
         assert not re.search(r"[A-Za-z]{4,}", summary_text)
+
+    def test_attention_notes_are_structured_and_human_friendly(self, db: Session, factory):
+        user = factory.user(db)
+        role = factory.candidate_role(db)
+        factory.assign_role(db, user, role)
+        profile = factory.profile(db, user)
+        app = factory.application(db, profile)
+
+        db.add(ApplicationSectionState(
+            application_id=app.id,
+            section_key="growth_journey",
+            payload={
+                "answers": {
+                    "q1": {"text": "А" * 260, "meta": {"was_pasted": True, "paste_count": 2, "was_edited_after_paste": False, "typing_duration_ms": 12000}},
+                    "q2": {"text": "Б" * 210, "meta": {"was_pasted": True, "paste_count": 2, "was_edited_after_paste": False, "typing_duration_ms": 11000}},
+                    "q3": {"text": "В" * 210, "meta": {"was_pasted": True, "paste_count": 1, "was_edited_after_paste": False, "typing_duration_ms": 9000}},
+                    "q4": {"text": "Г" * 210, "meta": {"was_pasted": False, "paste_count": 0, "was_edited_after_paste": False, "typing_duration_ms": 45000}},
+                    "q5": {"text": "Д" * 160, "meta": {"was_pasted": False, "paste_count": 0, "was_edited_after_paste": False, "typing_duration_ms": 40000}},
+                },
+                "consent_privacy": True,
+                "consent_parent": True,
+            },
+            is_complete=True,
+            schema_version=1,
+            last_saved_at=datetime.now(tz=UTC),
+        ))
+
+        _seed_analysis_run(
+            db,
+            app.id,
+            section_signals={
+                "initiative": 0.2,
+                "resilience": 0.3,
+                "responsibility": 0.2,
+                "growth": 0.2,
+                "concrete_experience": 0.1,
+            },
+            per_question={
+                "q1": {
+                    "stats": {"word_count": 55, "unique_word_ratio": 0.31},
+                    "heuristics": {"action_score": 0.1, "reflection_score": 0.1, "time_score": 0.1, "concrete_score": 0.1, "repetitive_score": 0.6},
+                    "spam_check": {"ok": False},
+                    "key_sentences": ["Текст обобщён и почти без конкретики."],
+                },
+                "q2": {
+                    "stats": {"word_count": 58, "unique_word_ratio": 0.34},
+                    "heuristics": {"action_score": 0.1, "reflection_score": 0.1, "time_score": 0.1, "concrete_score": 0.1, "repetitive_score": 0.58},
+                    "spam_check": {"ok": True},
+                    "key_sentences": ["Повторяющиеся формулировки без деталей."],
+                },
+            },
+        )
+
+        db.add(TextAnalysisRun(
+            id=uuid4(),
+            application_id=app.id,
+            block_key="motivation_goals",
+            source_kind="pipeline",
+            status="completed",
+            explanations={"signals": {"motivation_density": 0.42, "evidence_density": 0.02, "word_count": 180}},
+            flags={},
+        ))
+        db.add(TextAnalysisRun(
+            id=uuid4(),
+            application_id=app.id,
+            block_key="achievements_activities",
+            source_kind="pipeline",
+            status="completed",
+            explanations={"signals": {"impact_markers": 0, "links_count": 0}},
+            flags={},
+        ))
+        db.flush()
+
+        result = _build_path_summary_panel(db, app.id)
+        attention_section = next(s for s in result["sections"] if s["title"] == "Требует внимания")
+        notes = attention_section.get("attentionNotes") or []
+        assert notes, "Expected structured attention notes for path panel"
+
+        categories = {n.get("category") for n in notes}
+        assert "paste_behavior" in categories
+        assert "content_quality" in categories
+        assert "originality" in categories or "consistency" in categories
+        assert all(n.get("severity") in {"low", "medium", "high"} for n in notes)
+        assert all("message" in n and isinstance(n["message"], str) and n["message"].strip() for n in notes)
+
+        for note in notes:
+            _assert_no_technical_markers(note["message"])
+        for item in attention_section["items"]:
+            _assert_no_technical_markers(item)

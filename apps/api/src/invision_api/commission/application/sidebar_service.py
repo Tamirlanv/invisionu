@@ -358,21 +358,171 @@ def _detect_main_motivation_thesis(summary_text: str, narrative: str) -> str:
     return "Главная мотивация не определена"
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_motivation_attention_notes(
+    *,
+    signals: dict[str, Any],
+    motivation_payload: dict[str, Any],
+    path_signals: dict[str, Any],
+    achievements_signals: dict[str, Any],
+) -> list[dict[str, Any]]:
+    notes: list[dict[str, Any]] = []
+
+    mot_density = _to_float(signals.get("motivation_density"))
+    evidence = _to_float(signals.get("evidence_density"))
+    avg_sentence_len = _to_float(signals.get("avg_sentence_len"))
+    word_count = int(signals.get("word_count", 0) or 0)
+
+    # A) Originality (soft heuristics only; never deterministic claim)
+    if (
+        evidence is not None
+        and evidence < 0.05
+        and word_count >= 140
+        and avg_sentence_len is not None
+        and avg_sentence_len >= 18
+    ):
+        notes.append(
+            _make_attention_note(
+                category="originality",
+                title="Оригинальность",
+                message="Текст выглядит слишком шаблонно при низкой конкретике; стоит уточнить личный вклад на интервью.",
+                severity="medium",
+                confidence=0.71,
+            )
+        )
+    elif evidence is not None and evidence < 0.05 and word_count >= 100:
+        notes.append(
+            _make_attention_note(
+                category="originality",
+                title="Оригинальность",
+                message="В тексте много общих формулировок и мало фактических деталей; интерпретировать с осторожностью.",
+                severity="low",
+                confidence=0.64,
+            )
+        )
+
+    # B) Cross-section consistency
+    path_growth = _to_float(path_signals.get("growth"))
+    path_concrete = _to_float(path_signals.get("concrete_experience"))
+    ach_impact = _to_float(achievements_signals.get("impact_markers")) or 0.0
+    ach_links = _to_float(achievements_signals.get("links_count")) or 0.0
+
+    if (
+        mot_density is not None
+        and mot_density >= 0.35
+        and (
+            (path_growth is not None and path_growth < 0.3)
+            or (path_concrete is not None and path_concrete < 0.3)
+        )
+    ):
+        notes.append(
+            _make_attention_note(
+                category="consistency",
+                title="Согласованность разделов",
+                message="Заявленные цели в мотивации пока слабо поддержаны примерами из траектории роста; требует уточнения.",
+                severity="medium",
+                confidence=0.68,
+            )
+        )
+
+    if mot_density is not None and mot_density >= 0.35 and ach_impact == 0 and ach_links == 0:
+        notes.append(
+            _make_attention_note(
+                category="consistency",
+                title="Согласованность разделов",
+                message="Между мотивацией и блоком достижений не прослеживается явная связка подтверждающих результатов.",
+                severity="low",
+                confidence=0.6,
+            )
+        )
+
+    # C) Paste behavior
+    was_pasted = bool(motivation_payload.get("was_pasted", False))
+    paste_count = int(motivation_payload.get("paste_count", 0) or 0)
+    if was_pasted and paste_count >= 3:
+        notes.append(
+            _make_attention_note(
+                category="paste_behavior",
+                title="Вставки текста",
+                message="Зафиксировано несколько вставок крупного текста; полезно проверить глубину самостоятельной проработки ответа.",
+                severity="medium",
+                confidence=0.74,
+            )
+        )
+    elif was_pasted:
+        notes.append(
+            _make_attention_note(
+                category="paste_behavior",
+                title="Вставки текста",
+                message="Часть текста была вставлена в поле; учитывать это как дополнительный сигнал при ручной оценке.",
+                severity="low",
+                confidence=0.58,
+            )
+        )
+
+    # D) Content quality
+    if word_count and word_count < 90:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Содержательность",
+                message="Текст краткий для уверенной интерпретации мотивации; стоит запросить больше конкретики.",
+                severity="medium",
+                confidence=0.76,
+            )
+        )
+    elif evidence is not None and evidence < 0.03:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Содержательность",
+                message="Личный опыт и конкретные примеры раскрыты ограниченно.",
+                severity="low",
+                confidence=0.67,
+            )
+        )
+
+    return notes[:6]
+
+
 def _build_motivation_summary_panel(db: Session, application_id: UUID) -> dict[str, Any]:
     sections: list[dict[str, Any]] = []
-    run = _get_analysis_run(db, application_id, "motivation_goals")
-    explanations = (run.explanations or {}) if run else {}
-    signals = explanations.get("signals", {})
-    summary_text = explanations.get("summary", "")
+    runs = _get_analysis_runs(db, application_id, "motivation_goals")
+    run = runs[0] if runs else None
+    signals_run = next(
+        (
+            r
+            for r in runs
+            if isinstance((r.explanations or {}).get("signals"), dict)
+            and bool((r.explanations or {}).get("signals"))
+        ),
+        None,
+    )
+    explanations = (signals_run.explanations or {}) if signals_run else ((run.explanations or {}) if run else {})
+    signals = explanations.get("signals", {}) if isinstance(explanations.get("signals"), dict) else {}
+    summary_text = str(explanations.get("summary") or "")
 
-    from invision_api.repositories import admissions_repository
-    app = admissions_repository.get_application_by_id(db, application_id)
-    motivation_payload: dict[str, Any] = {}
-    if app:
-        for section_state in app.section_states or []:
-            if section_state.section_key in {"motivation_goals", "motivation_letter"} and isinstance(section_state.payload, dict):
-                motivation_payload = section_state.payload
-                break
+    section_payloads = _get_section_payloads(db, application_id)
+    motivation_payload = section_payloads.get("motivation_goals") or section_payloads.get("motivation_letter") or {}
+    if not isinstance(motivation_payload, dict):
+        motivation_payload = {}
+
+    if ("was_pasted" not in motivation_payload or "paste_count" not in motivation_payload) and run:
+        run_explanations = run.explanations or {}
+        if isinstance(run_explanations, dict):
+            if "was_pasted" in run_explanations:
+                motivation_payload["was_pasted"] = bool(run_explanations.get("was_pasted"))
+            if "paste_count" in run_explanations:
+                motivation_payload["paste_count"] = int(run_explanations.get("paste_count", 0) or 0)
+
     narrative = str(motivation_payload.get("narrative") or "").strip()
 
     # Block 0: Main motivation thesis (required)
@@ -391,8 +541,8 @@ def _build_motivation_summary_panel(db: Session, application_id: UUID) -> dict[s
 
     # Block 2: Key signals
     signal_items: list[str] = []
-    mot_density = signals.get("motivation_density")
-    evidence = signals.get("evidence_density")
+    mot_density = _to_float(signals.get("motivation_density"))
+    evidence = _to_float(signals.get("evidence_density"))
     word_count = signals.get("word_count", 0)
     if mot_density is not None:
         if mot_density > 0.15:
@@ -412,23 +562,27 @@ def _build_motivation_summary_panel(db: Session, application_id: UUID) -> dict[s
         signal_items.append("Данные недоступны")
     sections.append(_section_block("Ключевые сигналы", signal_items))
 
-    # Block 3: Attention
-    attention_items: list[str] = []
-    flags = (run.flags or {}) if run else {}
-    if flags.get("manual_review_required"):
-        if word_count and word_count < 70:
-            attention_items.append("Очень короткий текст мотивации")
-    if mot_density is not None and mot_density < 0.05:
-        attention_items.append("Слабая связь с программой")
-    if evidence is not None and evidence < 0.03:
-        attention_items.append("Отсутствуют конкретные примеры")
-    if not attention_items:
-        attention_items.append("Замечаний нет")
-    sections.append(_section_block("Требует внимания", attention_items))
+    # Block 3: Attention (structured notes + backward-compatible items)
+    path_run = _get_analysis_run(db, application_id, "growth_journey")
+    path_signals = ((path_run.explanations or {}).get("section_signals", {})) if path_run else {}
+    if not isinstance(path_signals, dict):
+        path_signals = {}
+    achievements_run = _get_analysis_run(db, application_id, "achievements_activities")
+    achievements_signals = ((achievements_run.explanations or {}).get("signals", {})) if achievements_run else {}
+    if not isinstance(achievements_signals, dict):
+        achievements_signals = {}
+
+    attention_notes = _build_motivation_attention_notes(
+        signals=signals,
+        motivation_payload=motivation_payload,
+        path_signals=path_signals,
+        achievements_signals=achievements_signals,
+    )
+    sections.append(_attention_section("Требует внимания", attention_notes))
 
     # Block 4: Confidence
     conf_items: list[str] = []
-    if run and run.status == "completed":
+    if signals_run and signals_run.status == "completed":
         conf_items.append("Анализ завершён успешно")
     elif run:
         conf_items.append(f"Статус обработки: {run.status}")
@@ -592,39 +746,251 @@ def _extract_key_excerpts(
     return theses[:4]
 
 
-def _build_path_attention(
+def _path_paste_signals(growth_payload: dict[str, Any]) -> dict[str, int]:
+    answers = growth_payload.get("answers")
+    if not isinstance(answers, dict):
+        return {
+            "pasted_answers_count": 0,
+            "total_paste_count": 0,
+            "low_edit_after_paste_count": 0,
+            "very_short_typing_count": 0,
+        }
+    pasted_answers_count = 0
+    total_paste_count = 0
+    low_edit_after_paste_count = 0
+    very_short_typing_count = 0
+    for answer in answers.values():
+        if not isinstance(answer, dict):
+            continue
+        meta = answer.get("meta")
+        if not isinstance(meta, dict):
+            continue
+        was_pasted = bool(meta.get("was_pasted", False))
+        paste_count = int(meta.get("paste_count", 0) or 0)
+        edited_after_paste = bool(meta.get("was_edited_after_paste", False))
+        typing_duration_ms = int(meta.get("typing_duration_ms", 0) or 0)
+        if was_pasted:
+            pasted_answers_count += 1
+            if not edited_after_paste:
+                low_edit_after_paste_count += 1
+        if paste_count > 0:
+            total_paste_count += paste_count
+        if was_pasted and typing_duration_ms > 0 and typing_duration_ms < 20000:
+            very_short_typing_count += 1
+    return {
+        "pasted_answers_count": pasted_answers_count,
+        "total_paste_count": total_paste_count,
+        "low_edit_after_paste_count": low_edit_after_paste_count,
+        "very_short_typing_count": very_short_typing_count,
+    }
+
+
+def _build_path_attention_notes(
     raw_pq: dict[str, Any] | list[Any],
     section_signals: dict[str, Any],
-) -> list[str]:
-    """Build commission-facing attention items without internal identifiers."""
+    *,
+    growth_payload: dict[str, Any] | None = None,
+    motivation_signals: dict[str, Any] | None = None,
+    achievements_signals: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     items_list: list[dict[str, Any]] = (
         list(raw_pq.values()) if isinstance(raw_pq, dict) else (raw_pq if isinstance(raw_pq, list) else [])
     )
+    notes: list[dict[str, Any]] = []
 
-    attention: list[str] = []
-
-    spam_count = 0
+    # A) Originality-like signals (soft heuristics)
+    low_specificity_count = 0
+    lexical_low_count = 0
+    repetitive_count = 0
+    spam_like_count = 0
     for pq in items_list:
-        sc = pq.get("spam_check") or {}
-        if not sc.get("ok", True):
-            spam_count += 1
-    if spam_count > 0:
-        attention.append(f"Некоторые ответы требуют внимания ({spam_count} из {len(items_list)})")
+        stats = pq.get("stats") or {}
+        heur = pq.get("heuristics") or {}
+        spam = pq.get("spam_check") or {}
+        unique_ratio = _to_float(stats.get("unique_word_ratio"))
+        action = _to_float(heur.get("action_score"))
+        reflection = _to_float(heur.get("reflection_score"))
+        time_score = _to_float(heur.get("time_score"))
+        concrete_score = _to_float(heur.get("concrete_score"))
+        repetitive = _to_float(heur.get("repetitive_score"))
+        if unique_ratio is not None and unique_ratio < 0.4:
+            lexical_low_count += 1
+        if repetitive is not None and repetitive >= 0.45:
+            repetitive_count += 1
+        if spam.get("ok") is False:
+            spam_like_count += 1
+        if (
+            action is not None
+            and reflection is not None
+            and time_score is not None
+            and concrete_score is not None
+            and action < 0.25
+            and reflection < 0.25
+            and time_score < 0.25
+            and concrete_score < 0.25
+        ):
+            low_specificity_count += 1
 
+    if low_specificity_count >= 2 or (lexical_low_count >= 2 and repetitive_count >= 2):
+        notes.append(
+            _make_attention_note(
+                category="originality",
+                title="Оригинальность",
+                message="Часть ответов выглядит шаблонно и слабо персонализировано; рекомендуется уточнить детали на интервью.",
+                severity="medium",
+                confidence=0.72,
+            )
+        )
+    elif lexical_low_count >= 1 and repetitive_count >= 1:
+        notes.append(
+            _make_attention_note(
+                category="originality",
+                title="Оригинальность",
+                message="В ответах заметна повторяемость формулировок и ограниченная вариативность лексики.",
+                severity="low",
+                confidence=0.61,
+            )
+        )
+
+    # B) Cross-section consistency
+    m_signals = motivation_signals or {}
+    a_signals = achievements_signals or {}
+    mot_density = _to_float(m_signals.get("motivation_density"))
+    path_growth = _to_float(section_signals.get("growth"))
+    path_concrete = _to_float(section_signals.get("concrete_experience"))
+    ach_impact = _to_float(a_signals.get("impact_markers")) or 0.0
+    ach_links = _to_float(a_signals.get("links_count")) or 0.0
+    if mot_density is not None and mot_density >= 0.35 and path_growth is not None and path_growth < 0.3:
+        notes.append(
+            _make_attention_note(
+                category="consistency",
+                title="Согласованность разделов",
+                message="Между мотивационными акцентами и описанной траекторией роста видна неполная связка; требует уточнения.",
+                severity="medium",
+                confidence=0.67,
+            )
+        )
+    if ach_impact >= 2 and (path_concrete is not None and path_concrete < 0.3):
+        notes.append(
+            _make_attention_note(
+                category="consistency",
+                title="Согласованность разделов",
+                message="В достижениях заявлены сильные результаты, но в «Пути» недостаточно конкретных эпизодов, которые их поддерживают.",
+                severity="low",
+                confidence=0.63,
+            )
+        )
+    if mot_density is not None and mot_density >= 0.35 and ach_impact == 0 and ach_links == 0:
+        notes.append(
+            _make_attention_note(
+                category="consistency",
+                title="Согласованность разделов",
+                message="Между разделами «Путь», «Мотивация» и «Достижения» пока не прослеживается явная подтверждающая связка.",
+                severity="low",
+                confidence=0.58,
+            )
+        )
+
+    # C) Paste behavior
+    paste = _path_paste_signals(growth_payload or {})
+    pasted_answers = paste["pasted_answers_count"]
+    total_pastes = paste["total_paste_count"]
+    low_edit = paste["low_edit_after_paste_count"]
+    short_typing = paste["very_short_typing_count"]
+    if pasted_answers >= 3 and low_edit >= 2:
+        notes.append(
+            _make_attention_note(
+                category="paste_behavior",
+                title="Вставки текста",
+                message="Значимая часть ответов была вставлена, а последующее редактирование ограничено; полезна дополнительная проверка аутентичности.",
+                severity="medium",
+                confidence=0.78,
+            )
+        )
+    elif total_pastes >= 4 or (pasted_answers >= 2 and short_typing >= 1):
+        notes.append(
+            _make_attention_note(
+                category="paste_behavior",
+                title="Вставки текста",
+                message="Зафиксировано несколько вставок в ответах; учитывать это как дополнительный сигнал при ручной интерпретации.",
+                severity="low",
+                confidence=0.62,
+            )
+        )
+
+    # D) Content quality
     word_counts = [(pq.get("stats") or {}).get("word_count", 0) for pq in items_list]
-    short = sum(1 for wc in word_counts if wc and wc < 20)
-    if short > 0:
-        attention.append(f"Коротких ответов: {short}")
+    short_answers = sum(1 for wc in word_counts if wc and wc < 60)
+    concrete = _to_float(section_signals.get("concrete_experience"))
+    growth = _to_float(section_signals.get("growth"))
+    if spam_like_count > 0:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Качество содержания",
+                message="Часть ответов требует дополнительной проверки на содержательность и самостоятельную проработку.",
+                severity="medium",
+                confidence=0.74,
+            )
+        )
+    if short_answers > 0:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Качество содержания",
+                message=f"Есть краткие фрагменты ответа ({short_answers}), из-за чего общий контекст раскрыт не полностью.",
+                severity="low",
+                confidence=0.64,
+            )
+        )
+    if concrete is not None and concrete < 0.3:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Качество содержания",
+                message="Мало конкретных примеров и фактических деталей.",
+                severity="medium",
+                confidence=0.7,
+            )
+        )
+    if growth is not None and growth < 0.3:
+        notes.append(
+            _make_attention_note(
+                category="content_quality",
+                title="Качество содержания",
+                message="Рефлексия о личном росте раскрыта ограниченно.",
+                severity="low",
+                confidence=0.66,
+            )
+        )
 
-    concrete = section_signals.get("concrete_experience")
-    if concrete is not None and float(concrete) < 0.3:
-        attention.append("Мало конкретных примеров и деталей")
+    deduped: list[dict[str, Any]] = []
+    seen_messages: set[str] = set()
+    for n in notes:
+        msg = str(n.get("message", "")).strip().lower()
+        if not msg or msg in seen_messages:
+            continue
+        seen_messages.add(msg)
+        deduped.append(n)
+    return deduped[:6]
 
-    growth = section_signals.get("growth")
-    if growth is not None and float(growth) < 0.3:
-        attention.append("Слабая рефлексия — личный рост раскрыт недостаточно")
 
-    return attention
+def _build_path_attention(
+    raw_pq: dict[str, Any] | list[Any],
+    section_signals: dict[str, Any],
+    *,
+    growth_payload: dict[str, Any] | None = None,
+    motivation_signals: dict[str, Any] | None = None,
+    achievements_signals: dict[str, Any] | None = None,
+) -> list[str]:
+    notes = _build_path_attention_notes(
+        raw_pq,
+        section_signals,
+        growth_payload=growth_payload,
+        motivation_signals=motivation_signals,
+        achievements_signals=achievements_signals,
+    )
+    return [str(n.get("message", "")).strip() for n in notes if str(n.get("message", "")).strip()]
 
 
 def _sanitize_llm_summary(text: str) -> str:
@@ -703,12 +1069,28 @@ def _build_path_summary_panel(db: Session, application_id: UUID) -> dict[str, An
     excerpts = _extract_key_excerpts(raw_pq, section_signals)
     sections.append(_section_block("Что сформировало кандидата", excerpts))
 
-    # Block 4: Attention (business-facing only)
-    attention = _build_path_attention(raw_pq, section_signals)
-    if attention:
-        sections.append(_section_block("Требует внимания", attention))
-    else:
-        sections.append(_section_block("Требует внимания", ["Замечаний нет"]))
+    # Block 4: Attention (structured + backward-compatible items)
+    section_payloads = _get_section_payloads(db, application_id)
+    growth_payload = section_payloads.get("growth_journey") if isinstance(section_payloads.get("growth_journey"), dict) else {}
+
+    motivation_run = _get_analysis_run(db, application_id, "motivation_goals")
+    motivation_signals = ((motivation_run.explanations or {}).get("signals", {})) if motivation_run else {}
+    if not isinstance(motivation_signals, dict):
+        motivation_signals = {}
+
+    achievements_run = _get_analysis_run(db, application_id, "achievements_activities")
+    achievements_signals = ((achievements_run.explanations or {}).get("signals", {})) if achievements_run else {}
+    if not isinstance(achievements_signals, dict):
+        achievements_signals = {}
+
+    attention_notes = _build_path_attention_notes(
+        raw_pq,
+        section_signals,
+        growth_payload=growth_payload,
+        motivation_signals=motivation_signals,
+        achievements_signals=achievements_signals,
+    )
+    sections.append(_attention_section("Требует внимания", attention_notes))
 
     return {
         "type": "summary",

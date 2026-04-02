@@ -294,12 +294,29 @@ export type CommissionApplicationTestInfoView = {
 export type SidebarSection = {
   title: string;
   items: string[];
+  attentionNotes?: AttentionNote[];
 };
 
 export type CommissionSidebarPanelView = {
   type: "validation" | "summary";
   title: string;
   sections: SidebarSection[];
+};
+
+export type AttentionNoteCategory =
+  | "originality"
+  | "consistency"
+  | "paste_behavior"
+  | "content_quality";
+
+export type AttentionNoteSeverity = "low" | "medium" | "high";
+
+export type AttentionNote = {
+  category: AttentionNoteCategory;
+  title: string;
+  message: string;
+  severity: AttentionNoteSeverity;
+  confidence?: number | null;
 };
 
 export type ReviewScoreItem = {

@@ -21,6 +21,7 @@ import {
   saveSectionReviewScores,
 } from "@/lib/commission/query";
 import type {
+  AttentionNote,
   CommissionApplicationPersonalInfoView,
   CommissionSidebarPanelView,
   CommissionApplicationTestInfoView,
@@ -39,6 +40,12 @@ function formatSubmittedDate(raw: string): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yy = String(d.getFullYear()).slice(-2);
   return `${dd}.${mm}.${yy}`;
+}
+
+function formatAttentionSeverity(severity: AttentionNote["severity"]): string {
+  if (severity === "high") return "Высокий приоритет";
+  if (severity === "medium") return "Средний приоритет";
+  return "Низкий приоритет";
 }
 
 function ProcessingBanner({ data }: { data: CommissionApplicationPersonalInfoView }) {
@@ -320,11 +327,20 @@ export default function CommissionApplicationDetailPage() {
                 {sidebarPanel.sections.map((section) => (
                   <div key={section.title} style={{ display: "grid", gap: 4 }}>
                     <p className={styles.aiLabel}>{section.title}</p>
-                    {section.items.map((item, i) => (
-                      <p key={i} className={styles.aiText}>
-                        {item}
-                      </p>
-                    ))}
+                    {section.attentionNotes && section.attentionNotes.length > 0 ? (
+                      section.attentionNotes.map((note, i) => (
+                        <p key={`${note.category}-${i}`} className={styles.aiText}>
+                          <span style={{ fontWeight: 500 }}>{note.title}:</span> {note.message}
+                          <span style={{ color: "#8b8b8b" }}> ({formatAttentionSeverity(note.severity)})</span>
+                        </p>
+                      ))
+                    ) : (
+                      section.items.map((item, i) => (
+                        <p key={i} className={styles.aiText}>
+                          {item}
+                        </p>
+                      ))
+                    )}
                   </div>
                 ))}
               </div>
