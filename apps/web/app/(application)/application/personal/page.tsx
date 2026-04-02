@@ -124,7 +124,7 @@ export default function PersonalPage() {
               },
             },
           });
-          setValue("identity_document_id", undefined, { shouldValidate: true, shouldDirty: true });
+          setValue("identity_document_id", "", { shouldValidate: true, shouldDirty: true });
           setIdentityFileMeta(null);
           bustApiCache("/candidates/me");
           setPageMsg(null);
