@@ -18,12 +18,40 @@ from invision_api.services.stage_transition_policy import TransitionContext, Tra
 logger = logging.getLogger(__name__)
 
 
-def enqueue_post_submit_jobs(db: Session, application_id: UUID) -> None:
+def enqueue_post_submit_jobs(
+    db: Session,
+    application_id: UUID,
+    *,
+    queue_report: job_dispatcher_service.QueueDispatchReport | None = None,
+    strict: bool = False,
+) -> job_dispatcher_service.QueueDispatchReport:
     """After submit: queue text extraction for each document and a screening job."""
+    report = queue_report or job_dispatcher_service.QueueDispatchReport()
+    failed_before = report.failed
     docs = document_repository.list_documents_for_application(db, application_id)
     for d in docs:
-        job_dispatcher_service.enqueue_extract_text(db, application_id, d.id)
-    job_dispatcher_service.enqueue_initial_screening_job(db, application_id)
+        job_dispatcher_service.enqueue_extract_text(
+            db,
+            application_id,
+            d.id,
+            queue_report=report,
+            strict=strict,
+        )
+    job_dispatcher_service.enqueue_initial_screening_job(
+        db,
+        application_id,
+        queue_report=report,
+        strict=strict,
+    )
+    failed_delta = report.failed - failed_before
+    if failed_delta > 0:
+        logger.warning(
+            "post_submit_enqueue_degraded application=%s failed_jobs=%s attempted_jobs=%s",
+            application_id,
+            failed_delta,
+            report.attempted,
+        )
+    return report
 
 
 def run_extractions_for_application(db: Session, application_id: UUID) -> list[UUID]:

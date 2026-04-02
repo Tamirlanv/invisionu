@@ -129,6 +129,7 @@ class JobType(str, enum.Enum):
     extract_text = "extract_text"
     run_block_analysis = "run_block_analysis"
     initial_screening = "initial_screening"
+    data_check_unit = "data_check_unit"
 
 
 class JobStatus(str, enum.Enum):
@@ -137,3 +138,32 @@ class JobStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     dead = "dead"
+
+
+class DataCheckRunStatus(str, enum.Enum):
+    pending = "pending"
+    running = "running"
+    partial = "partial"
+    ready = "ready"
+    failed = "failed"
+
+
+class DataCheckUnitType(str, enum.Enum):
+    test_profile_processing = "test_profile_processing"
+    motivation_processing = "motivation_processing"
+    growth_path_processing = "growth_path_processing"
+    achievements_processing = "achievements_processing"
+    link_validation = "link_validation"
+    video_validation = "video_validation"
+    certificate_validation = "certificate_validation"
+    signals_aggregation = "signals_aggregation"
+    candidate_ai_summary = "candidate_ai_summary"
+
+
+class DataCheckUnitStatus(str, enum.Enum):
+    pending = "pending"
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    manual_review_required = "manual_review_required"

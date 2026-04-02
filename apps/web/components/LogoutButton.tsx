@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { clearAuthTokens, getAuthScopeFromPathname, getRefreshToken } from "@/lib/auth-session";
 
 type LogoutButtonProps = {
   /** По умолчанию — кнопка `.btn.secondary`; для футера анкеты — текстовая ссылка. */
@@ -15,9 +16,16 @@ export function LogoutButton({ className }: LogoutButtonProps) {
 
   async function logout() {
     setLoading(true);
+    const scope = getAuthScopeFromPathname(typeof window === "undefined" ? null : window.location.pathname);
+    const refresh = getRefreshToken(scope);
     try {
-      await apiFetch("/auth/logout", { method: "POST" });
+      await apiFetch("/auth/logout", {
+        method: "POST",
+        authScope: scope,
+        headers: refresh ? { "X-Refresh-Token": refresh } : undefined,
+      });
     } finally {
+      clearAuthTokens(scope);
       setLoading(false);
       router.replace("/login");
       router.refresh();

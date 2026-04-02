@@ -158,19 +158,16 @@ def build_personality_profile_snapshot(
     *,
     application_id: UUID,
     lang: Lang = "ru",
+    include_non_finalized: bool = False,
 ) -> dict[str, Any]:
     """Build explainable profile for committee-side snapshot."""
     scoring = _scoring_config()
     desired_ids = set(_question_ids())
 
-    answers = list(
-        db.scalars(
-            select(InternalTestAnswer).where(
-                InternalTestAnswer.application_id == application_id,
-                InternalTestAnswer.is_finalized.is_(True),
-            )
-        ).all()
-    )
+    stmt = select(InternalTestAnswer).where(InternalTestAnswer.application_id == application_id)
+    if not include_non_finalized:
+        stmt = stmt.where(InternalTestAnswer.is_finalized.is_(True))
+    answers = list(db.scalars(stmt).all())
 
     scores: dict[TraitKey, int] = {"INI": 0, "RES": 0, "COL": 0, "ADP": 0, "REF": 0}
     contrib: list[dict[str, Any]] = []

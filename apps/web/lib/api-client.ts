@@ -1,5 +1,6 @@
 import { apiServerBase } from "./config";
 import { getCached, setCached } from "./api-cache";
+import { getAccessToken, getAuthScopeFromApiPath, getRefreshToken, storeAuthTokens, type AuthScope } from "./auth-session";
 import { getUserFacingMessage } from "./user-facing-errors";
 
 export { bustApiCache } from "./api-cache";
@@ -64,15 +65,27 @@ function apiBaseUrl(): string {
 
 export async function apiFetch<T>(
   path: string,
-  init: RequestInit & { json?: unknown; skipAuthRefresh?: boolean } = {},
+  init: RequestInit & { json?: unknown; skipAuthRefresh?: boolean; authScope?: AuthScope } = {},
 ): Promise<T> {
-  const { json, headers, skipAuthRefresh, ...rest } = init;
+  const { json, headers, skipAuthRefresh, authScope, ...rest } = init;
   const base = apiBaseUrl();
   const rel = path.startsWith("/api/v1") ? path : `/api/v1${path.startsWith("/") ? path : `/${path}`}`;
   const url = path.startsWith("http") ? path : `${base}${rel}`;
+  const scope = authScope ?? getAuthScopeFromApiPath(rel);
   const h = new Headers(headers);
   if (json !== undefined) {
     h.set("Content-Type", "application/json");
+  }
+  const isAuthLoginLike =
+    rel.includes("/api/v1/auth/login") ||
+    rel.includes("/api/v1/auth/logout") ||
+    rel.includes("/api/v1/auth/refresh") ||
+    rel.includes("/api/v1/auth/register");
+  if (!isAuthLoginLike) {
+    const access = getAccessToken(scope);
+    if (access) {
+      h.set("Authorization", `Bearer ${access}`);
+    }
   }
   let res = await fetch(url, {
     ...rest,
@@ -83,17 +96,23 @@ export async function apiFetch<T>(
   });
 
   const canRefresh =
+    typeof window !== "undefined" &&
     !skipAuthRefresh &&
     !url.includes("/api/v1/auth/refresh") &&
     !url.includes("/api/v1/auth/login") &&
     !url.includes("/api/v1/auth/logout");
 
   if (res.status === 401 && canRefresh) {
-    const refreshed = await refreshSession();
+    const refreshed = await refreshSession(scope);
     if (refreshed) {
+      const retryHeaders = new Headers(h);
+      const nextAccess = getAccessToken(scope);
+      if (nextAccess) {
+        retryHeaders.set("Authorization", `Bearer ${nextAccess}`);
+      }
       res = await fetch(url, {
         ...rest,
-        headers: h,
+        headers: retryHeaders,
         body: json !== undefined ? JSON.stringify(json) : rest.body,
         credentials: "include",
         cache: "no-store",
@@ -143,9 +162,30 @@ export async function apiFetchCached<T>(path: string, ttlMs: number): Promise<T>
   return data;
 }
 
-export async function refreshSession(): Promise<boolean> {
+export async function refreshSession(scope: AuthScope = "candidate"): Promise<boolean> {
   try {
-    await apiFetch("/api/v1/auth/refresh", { method: "POST", skipAuthRefresh: true });
+    const base = apiBaseUrl();
+    const url = `${base}/api/v1/auth/refresh`;
+    const refresh = getRefreshToken(scope);
+    const headers = new Headers();
+    if (refresh) {
+      headers.set("X-Refresh-Token", refresh);
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const body = await parseJsonSafe(res);
+    if (body && typeof body === "object") {
+      const accessToken = (body as { access_token?: unknown }).access_token;
+      const refreshToken = (body as { refresh_token?: unknown }).refresh_token;
+      if (typeof accessToken === "string" && typeof refreshToken === "string") {
+        storeAuthTokens(scope, { accessToken, refreshToken });
+      }
+    }
     return true;
   } catch {
     return false;

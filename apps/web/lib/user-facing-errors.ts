@@ -13,6 +13,11 @@ function isLikelySafeUserMessage(t: string): boolean {
 
 export function getUserFacingMessage(status: number, rawDetail: string): string {
   const t = (rawDetail || "").trim();
+  const lowered = t.toLowerCase();
+
+  if (status === 503 && lowered.includes("обработки заявок")) {
+    return "Сервис обработки анкеты временно недоступен. Попробуйте отправить позже.";
+  }
 
   if (status >= 500 || status === 502 || status === 503 || status === 504) {
     return "Сервис временно недоступен. Попробуйте позже.";
@@ -22,13 +27,28 @@ export function getUserFacingMessage(status: number, rawDetail: string): string 
     return "Неверный email или пароль.";
   }
   if (status === 403) {
+    if (lowered.includes("подтвердите email")) {
+      return "Подтвердите email перед отправкой анкеты.";
+    }
     return "Нет доступа. Войдите под аккаунтом кандидата.";
   }
   if (status === 404) {
     return "Данные не найдены.";
   }
   if (status === 409) {
-    return "Этот email уже зарегистрирован.";
+    if (lowered.includes("повторная отправка доступна")) {
+      return "Переотправка доступна только если второй этап запущен с ошибкой обработки.";
+    }
+    if (lowered.includes("зарегистрирован") && lowered.includes("email")) {
+      return "Этот email уже зарегистрирован.";
+    }
+    if (lowered.includes("после отправки") || lowered.includes("недоступно для редактирования")) {
+      return "Анкета уже отправлена и больше не редактируется.";
+    }
+    if (lowered.includes("already submitted") || lowered.includes("duplicate")) {
+      return "Анкета уже была отправлена ранее.";
+    }
+    return "Конфликт данных. Обновите страницу и повторите.";
   }
 
   if (isLikelySafeUserMessage(t)) {

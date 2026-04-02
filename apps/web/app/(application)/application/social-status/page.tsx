@@ -43,7 +43,8 @@ export default function SocialStatusPage() {
         } else {
           setUploadedCert(null);
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setFileMsg("Не удалось загрузить данные заявления. Обновите страницу.");
       }
     }
@@ -136,8 +137,8 @@ export default function SocialStatusPage() {
         />
       </div>
 
-      <Link className="btn" href="/application/review" style={{ alignSelf: "flex-start" }}>
-        Далее: проверка
+      <Link className="btn" href="/application/personal" style={{ alignSelf: "flex-start" }}>
+        Далее
       </Link>
     </div>
   );

@@ -7,6 +7,7 @@ from invision_api.api.v1.routes import (
     documents,
     health,
     internal_admissions,
+    internal_processing,
     internal_test,
     link_validation,
 )
@@ -21,6 +22,11 @@ api_router.include_router(
     internal_admissions.router,
     prefix="/internal/admissions",
     tags=["internal-admissions"],
+)
+api_router.include_router(
+    internal_processing.router,
+    prefix="/internal/processing",
+    tags=["internal-processing"],
 )
 api_router.include_router(commission.router, prefix="/commission", tags=["commission"])
 api_router.include_router(link_validation.router, prefix="/links", tags=["link-validation"])

@@ -31,7 +31,7 @@ export function BoardColumn({
     <section
       ref={setNodeRef}
       style={{
-        minHeight: 280,
+        minHeight: "fit-content",
         border: isOver ? "1px solid #262626" : "1px solid #f1f1f1",
         borderRadius: 16,
         padding: 16,

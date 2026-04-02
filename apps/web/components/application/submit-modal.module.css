@@ -1,0 +1,227 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 36px 56px;
+  max-width: 560px;
+  width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  align-items: center;
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 450;
+  line-height: 20px;
+  letter-spacing: -0.6px;
+  color: #262626;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #626262;
+  margin: 0;
+}
+
+.completionText {
+  font-size: 16px;
+  font-weight: 350;
+  line-height: 16px;
+  letter-spacing: -0.48px;
+  color: #262626;
+  margin: 0;
+}
+
+.body {
+  display: flex;
+  gap: 36px;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+}
+
+.sectionsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sectionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionGroupTitle {
+  font-size: 20px;
+  font-weight: 450;
+  line-height: 20px;
+  letter-spacing: -0.6px;
+  color: #262626;
+  margin: 0;
+}
+
+.sectionItem {
+  font-size: 16px;
+  font-weight: 350;
+  line-height: 16px;
+  letter-spacing: -0.48px;
+  color: #262626;
+  margin: 0;
+}
+
+.docsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 213px;
+}
+
+.docsTitle {
+  font-size: 20px;
+  font-weight: 450;
+  line-height: 20px;
+  letter-spacing: -0.6px;
+  color: #262626;
+  margin: 0;
+}
+
+.docsList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.docCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.docIcon {
+  flex-shrink: 0;
+}
+
+.docInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.docName {
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #262626;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 135px;
+}
+
+.docSize {
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  color: #626262;
+  margin: 0;
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 12px 24px;
+  border-radius: 8px;
+  background: #262626;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 14px;
+  letter-spacing: -0.42px;
+  text-align: center;
+  transition: opacity 0.15s;
+}
+
+.submitBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.noDocsText {
+  font-size: 14px;
+  font-weight: 350;
+  color: #626262;
+  margin: 0;
+}
+
+.errorMsg {
+  color: #dc2626;
+  font-size: 14px;
+  font-weight: 350;
+  margin: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.successMsg {
+  color: #2e7d32;
+  font-size: 14px;
+  font-weight: 350;
+  margin: 0;
+  text-align: center;
+  width: 100%;
+}

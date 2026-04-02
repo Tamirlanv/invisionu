@@ -1,13 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import styles from "./application-header.module.css";
 
 type Props = {
   candidateName?: string;
+  subtitle?: string;
+  showSubmitButton?: boolean;
+  onSubmitClick?: () => void;
 };
 
-export function ApplicationHeader({ candidateName }: Props) {
+export function ApplicationHeader({
+  candidateName,
+  subtitle = "Заполните форму, загрузите документы и отправляйте заявку",
+  showSubmitButton = true,
+  onSubmitClick,
+}: Props) {
   const name = candidateName?.trim() || "кандидат";
 
   return (
@@ -15,13 +22,13 @@ export function ApplicationHeader({ candidateName }: Props) {
       <div className={styles.inner}>
         <div className={styles.titleBlock}>
           <h1 className={styles.title}>Добро пожаловать, {name}</h1>
-          <p className={styles.subtitle}>
-            Заполните форму, загрузите документы и отправляйте заявку
-          </p>
+          <p className={styles.subtitle}>{subtitle}</p>
         </div>
-        <Link href="/application/review" className="btn">
-          Отправить анкету
-        </Link>
+        {showSubmitButton ? (
+          <button type="button" className="btn" onClick={onSubmitClick}>
+            Отправить анкету
+          </button>
+        ) : null}
       </div>
     </header>
   );

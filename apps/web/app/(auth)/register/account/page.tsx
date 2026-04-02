@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { storeAuthTokens } from "@/lib/auth-session";
 import {
   registerPageSchema,
   splitNameToProfile,
@@ -20,6 +21,7 @@ import styles from "@/components/auth/auth-register.module.css";
 import { clearRegisterFlow, readRegisterFlow } from "@/lib/register-flow";
 
 type Step = "form" | "verify";
+type TokenResponse = { access_token: string; refresh_token: string };
 
 export default function RegisterAccountPage() {
   const router = useRouter();
@@ -93,10 +95,11 @@ export default function RegisterAccountPage() {
     }
     setApiErr(null);
     try {
-      await apiFetch("/auth/register/complete", {
+      const auth = await apiFetch<TokenResponse>("/auth/register/complete", {
         method: "POST",
         json: { email: pendingEmail, code: data.code },
       });
+      storeAuthTokens("candidate", { accessToken: auth.access_token, refreshToken: auth.refresh_token });
       clearRegisterFlow();
       router.replace("/application/personal?welcome=1");
       router.refresh();

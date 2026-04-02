@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiFetch, apiFetchCached, ApiError, bustApiCache, uploadDocumentForm } from "@/lib/api-client";
@@ -14,6 +15,7 @@ import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
 import { PillSegmentedControl } from "@/components/application/PillSegmentedControl";
 import { PresentationInstructionModal } from "@/components/application/PresentationInstructionModal";
 import { useLinkCheck } from "@/lib/hooks/useLinkCheck";
+import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
 import formStyles from "@/components/application/form-ui.module.css";
 import eduStyles from "./education.module.css";
 import { z } from "zod";
@@ -44,6 +46,7 @@ function docMetaForId(docs: DocRow[], docId: string | undefined): UploadedFileDi
 type FileKind = "english" | "certificate" | "additional";
 
 export default function EducationPage() {
+  const router = useRouter();
   const [instructionOpen, setInstructionOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [applicationId, setApplicationId] = useState<string | null>(null);
@@ -65,8 +68,10 @@ export default function EducationPage() {
     control,
     setValue,
     getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<Form>({
+
     resolver: zodResolver(educationSchema),
     defaultValues: DEFAULTS as Form,
   });
@@ -204,62 +209,64 @@ export default function EducationPage() {
             is_current: e.is_current,
           })) ?? [];
 
-        if (!raw) {
-          reset({
-            ...DEFAULTS,
-            entries: entriesFromRecords.length ? entriesFromRecords : [],
-          } as Form);
-          setFileMeta({
-            english: null,
-            certificate: null,
-            additional: null,
-          });
-          return;
+        let apiValues: Partial<Form> = {};
+        if (raw) {
+          const entriesPayload = Array.isArray(raw.entries) ? raw.entries : [];
+          const entries =
+            entriesPayload.length > 0
+              ? (entriesPayload as Form["entries"])
+              : entriesFromRecords.length > 0
+                ? entriesFromRecords
+                : [];
+          apiValues = {
+            entries,
+            presentation_video_url: raw.presentation_video_url != null ? String(raw.presentation_video_url) : "",
+            english_proof_kind:
+              raw.english_proof_kind === "toefl_60_78" ? "toefl_60_78" : "ielts_6",
+            certificate_proof_kind: raw.certificate_proof_kind === "nis_12" ? "nis_12" : "ent",
+            english_document_id: raw.english_document_id != null ? String(raw.english_document_id) : undefined,
+            certificate_document_id:
+              raw.certificate_document_id != null ? String(raw.certificate_document_id) : undefined,
+            additional_document_id:
+              raw.additional_document_id != null ? String(raw.additional_document_id) : undefined,
+            consent_privacy: Boolean(raw.consent_privacy),
+            consent_parent: Boolean(raw.consent_parent),
+          };
+        } else if (entriesFromRecords.length) {
+          apiValues = { entries: entriesFromRecords };
         }
 
-        const entriesPayload = Array.isArray(raw.entries) ? raw.entries : [];
-        const entries =
-          entriesPayload.length > 0
-            ? (entriesPayload as Form["entries"])
-            : entriesFromRecords.length > 0
-              ? entriesFromRecords
-              : [];
+        const local = loadDraft<Form>("education");
+        const merged = { ...DEFAULTS, ...apiValues, ...local } as Form;
+        reset(merged);
 
-        reset({
-          entries,
-          presentation_video_url: raw.presentation_video_url != null ? String(raw.presentation_video_url) : "",
-          english_proof_kind:
-            raw.english_proof_kind === "toefl_60_78" ? "toefl_60_78" : "ielts_6",
-          certificate_proof_kind: raw.certificate_proof_kind === "nis_12" ? "nis_12" : "ent",
-          english_document_id: raw.english_document_id != null ? String(raw.english_document_id) : undefined,
-          certificate_document_id:
-            raw.certificate_document_id != null ? String(raw.certificate_document_id) : undefined,
-          additional_document_id:
-            raw.additional_document_id != null ? String(raw.additional_document_id) : undefined,
-          consent_privacy: false,
-          consent_parent: false,
-        } as Form);
+        const engId = merged.english_document_id;
+        const certId = merged.certificate_document_id;
+        const addId = merged.additional_document_id;
         setFileMeta({
-          english: docMetaForId(docs, raw.english_document_id != null ? String(raw.english_document_id) : undefined),
-          certificate: docMetaForId(
-            docs,
-            raw.certificate_document_id != null ? String(raw.certificate_document_id) : undefined,
-          ),
-          additional: docMetaForId(
-            docs,
-            raw.additional_document_id != null ? String(raw.additional_document_id) : undefined,
-          ),
+          english: docMetaForId(docs, engId),
+          certificate: docMetaForId(docs, certId),
+          additional: docMetaForId(docs, addId),
         });
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setMsg("Не удалось загрузить данные заявления. Обновите страницу.");
       }
     }
     void load();
   }, [reset]);
 
-  async function onSubmit(data: Form) {
-    setMsg(null);
-    const payload = {
+  useEffect(() => {
+    const sub = watch((_, { name }) => {
+      if (name === "consent_privacy" || name === "consent_parent") {
+        saveDraftLocal("education", getValues());
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [watch, getValues]);
+
+  function buildPayload(data: Form) {
+    return {
       entries: data.entries.map((e) => ({
         ...e,
         start_date: e.start_date || undefined,
@@ -273,14 +280,37 @@ export default function EducationPage() {
       english_document_id: isUuid(data.english_document_id) ? data.english_document_id : undefined,
       certificate_document_id: isUuid(data.certificate_document_id) ? data.certificate_document_id : undefined,
       additional_document_id: isUuid(data.additional_document_id) ? data.additional_document_id : undefined,
+      consent_privacy: data.consent_privacy,
+      consent_parent: data.consent_parent,
     };
+  }
+
+  async function saveDraft() {
+    setMsg(null);
+    const values = getValues();
+    saveDraftLocal("education", values);
     try {
       await apiFetch("/candidates/me/application/sections/education", {
         method: "PATCH",
-        json: { payload },
+        json: { payload: buildPayload(values) },
       });
       bustApiCache("/candidates/me");
-      setMsg("Сохранено.");
+      setMsg("Черновик сохранен.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Не удалось сохранить черновик");
+    }
+  }
+
+  async function onSubmit(data: Form) {
+    setMsg(null);
+    try {
+      await apiFetch("/candidates/me/application/sections/education", {
+        method: "PATCH",
+        json: { payload: buildPayload(data) },
+      });
+      bustApiCache("/candidates/me");
+      clearDraft("education");
+      router.push("/application/internal-test");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Не удалось сохранить");
     }
@@ -293,11 +323,6 @@ export default function EducationPage() {
       <h1 className="h1" style={{ fontSize: 20, marginBottom: 24 }}>
         Образование
       </h1>
-      {msg ? (
-        <p className="error" role="alert" style={{ margin: "0 0 16px" }}>
-          {msg}
-        </p>
-      ) : null}
 
       <FormSection title="Персональная презентация">
         <div className={formStyles.field} style={{ width: "100%" }}>
@@ -387,6 +412,9 @@ export default function EducationPage() {
           isUploading={uploadingKind === "english"}
           onFile={(f) => void uploadDocument(f, "supporting_documents", "english")}
         />
+        {errors.english_document_id && (
+          <p className="error" style={{ margin: 0 }}>{errors.english_document_id.message}</p>
+        )}
       </FormSection>
 
       <Divider />
@@ -418,6 +446,9 @@ export default function EducationPage() {
           isUploading={uploadingKind === "certificate"}
           onFile={(f) => void uploadDocument(f, "supporting_documents", "certificate")}
         />
+        {errors.certificate_document_id && (
+          <p className="error" style={{ margin: 0 }}>{errors.certificate_document_id.message}</p>
+        )}
       </FormSection>
 
       <Divider />
@@ -474,13 +505,17 @@ export default function EducationPage() {
 
       <Divider />
 
+      {msg && (
+        <p className={msg.includes("Не удалось") ? "error" : "muted"} role="status">{msg}</p>
+      )}
+
       <div className={formStyles.formFooter}>
-        <button className="btn secondary" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Сохранение…" : "Сохранить"}
+        <button type="button" className="btn secondary" onClick={() => void saveDraft()} disabled={isSubmitting}>
+          Сохранить черновик
         </button>
-        <Link className="btn" href="/application/internal-test">
-          Далее
-        </Link>
+        <button type="submit" className="btn" disabled={isSubmitting}>
+          {isSubmitting ? "Сохранение…" : "Далее"}
+        </button>
       </div>
     </form>
     </>

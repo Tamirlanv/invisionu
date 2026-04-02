@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
+import { ApiError, apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
 import { motivationSchema } from "@/lib/validation";
 import {
   MAX_MOTIVATION_LETTER_LENGTH,
@@ -21,6 +21,7 @@ import { FormSection } from "@/components/application/FormSection";
 import { Divider } from "@/components/application/Divider";
 import { MotivationInstructionModal } from "@/components/application/MotivationInstructionModal";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
+import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
 import formStyles from "@/components/application/form-ui.module.css";
 import styles from "./page.module.css";
 
@@ -44,6 +45,7 @@ export default function MotivationPage() {
     setValue,
     control,
     watch,
+    getValues,
     formState: { isSubmitting },
   } = useForm<MotivationForm>({
     resolver: zodResolver(motivationPageSchema),
@@ -74,31 +76,70 @@ export default function MotivationPage() {
           2 * 60 * 1000,
         );
         const raw = app.sections.motivation_goals?.payload as Record<string, unknown> | undefined;
-        if (!raw) return;
+        const apiValues: Partial<MotivationForm> = raw
+          ? {
+              narrative: String(raw.narrative ?? ""),
+              was_pasted: Boolean(raw.was_pasted ?? false),
+              paste_count:
+                typeof raw.paste_count === "number" && raw.paste_count >= 0 ? Math.floor(raw.paste_count) : 0,
+              last_pasted_at: raw.last_pasted_at ? String(raw.last_pasted_at) : null,
+              consent_privacy: Boolean(raw.consent_privacy),
+              consent_parent: Boolean(raw.consent_parent),
+            }
+          : {};
+        const local = loadDraft<MotivationForm>("motivation");
         reset({
-          narrative: String(raw.narrative ?? ""),
-          was_pasted: Boolean(raw.was_pasted ?? false),
-          paste_count:
-            typeof raw.paste_count === "number" && raw.paste_count >= 0 ? Math.floor(raw.paste_count) : 0,
-          last_pasted_at: raw.last_pasted_at ? String(raw.last_pasted_at) : null,
-          consent_privacy: false,
-          consent_parent: false,
+          narrative: "",
+          was_pasted: false,
+          paste_count: 0,
+          last_pasted_at: null,
+          ...apiValues,
+          ...local,
         });
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setMsg("Не удалось загрузить мотивационное письмо. Обновите страницу.");
       }
     }
     void load();
   }, [reset]);
 
+  useEffect(() => {
+    const sub = watch((_, { name }) => {
+      if (name === "consent_privacy" || name === "consent_parent") {
+        const cv = getValues();
+        saveDraftLocal("motivation", {
+          narrative: cv.narrative,
+          was_pasted: cv.was_pasted,
+          paste_count: cv.paste_count,
+          last_pasted_at: cv.last_pasted_at,
+          consent_privacy: cv.consent_privacy,
+          consent_parent: cv.consent_parent,
+        });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [watch, getValues]);
+
   async function saveDraft() {
     setMsg(null);
+    const currentValues = getValues();
+    saveDraftLocal("motivation", {
+      narrative,
+      was_pasted: wasPasted,
+      paste_count: pasteCount,
+      last_pasted_at: lastPastedAt,
+      consent_privacy: currentValues.consent_privacy,
+      consent_parent: currentValues.consent_parent,
+    });
     try {
-      const payload: MotivationPayload = {
+      const payload = {
         narrative: normalizedNarrative,
         was_pasted: wasPasted,
         paste_count: pasteCount,
         last_pasted_at: lastPastedAt,
+        consent_privacy: currentValues.consent_privacy,
+        consent_parent: currentValues.consent_parent,
       };
       await apiFetch("/candidates/me/application/sections/motivation_goals", {
         method: "PATCH",
@@ -113,11 +154,13 @@ export default function MotivationPage() {
 
   async function onSubmit(data: MotivationForm) {
     setMsg(null);
-    const payload: MotivationPayload = {
+    const payload = {
       narrative: trimToMotivationMax(normalizeMotivationLetter(data.narrative)),
       was_pasted: data.was_pasted,
       paste_count: data.paste_count,
       last_pasted_at: data.last_pasted_at ?? null,
+      consent_privacy: data.consent_privacy,
+      consent_parent: data.consent_parent,
     };
     try {
       await apiFetch("/candidates/me/application/sections/motivation_goals", {
@@ -125,6 +168,7 @@ export default function MotivationPage() {
         json: { payload },
       });
       bustApiCache("/candidates/me");
+      clearDraft("motivation");
       router.push("/application/growth");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Не удалось сохранить");

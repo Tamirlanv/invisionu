@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
+import { ApiError, apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
 import { achievementsSchema } from "@/lib/validation";
 import { Divider } from "@/components/application/Divider";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
+import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
 import formStyles from "@/components/application/form-ui.module.css";
 import styles from "./page.module.css";
 
@@ -35,6 +36,7 @@ function buildDefaults(): Form {
 }
 
 export default function AchievementsPage() {
+
   const [msg, setMsg] = useState<string | null>(null);
 
   const {
@@ -60,32 +62,44 @@ export default function AchievementsPage() {
           sections: Record<string, { payload: unknown }>;
         }>("/candidates/me/application", 2 * 60 * 1000);
         const raw = app.sections.achievements_activities?.payload as Record<string, unknown> | undefined;
-        if (!raw) return;
-
-        const links = Array.isArray(raw.links) ? (raw.links as Form["links"]) : [];
-        const merged = STATIC_LINKS.map((s) => {
-          const saved = links.find((l) => l.link_type === s.link_type && !l.url?.startsWith("__dyn__"));
-          return { ...s, url: saved?.url ?? "" };
-        });
-        const extras = links.filter(
-          (l) => !STATIC_LINKS.some((s) => s.link_type === l.link_type) || l.link_type === "extra",
-        );
-        const dynamicExtras = extras.filter((l) => l.link_type === "extra" && !merged.some((m) => m.url === l.url && m.link_type === "extra"));
-
-        reset({
-          achievements_text: typeof raw.achievements_text === "string" ? raw.achievements_text : "",
-          role: typeof raw.role === "string" ? raw.role : "",
-          year: typeof raw.year === "string" ? raw.year : "",
-          links: [...merged, ...dynamicExtras.map((d) => ({ link_type: "extra", label: "Дополнительно", url: d.url ?? "" }))],
-          consent_privacy: false,
-          consent_parent: false,
-        });
-      } catch {
+        let apiValues: Partial<Form> = {};
+        if (raw) {
+          const links = Array.isArray(raw.links) ? (raw.links as Form["links"]) : [];
+          const mergedLinks = STATIC_LINKS.map((s) => {
+            const saved = links.find((l) => l.link_type === s.link_type && !l.url?.startsWith("__dyn__"));
+            return { ...s, url: saved?.url ?? "" };
+          });
+          const extras = links.filter(
+            (l) => !STATIC_LINKS.some((s) => s.link_type === l.link_type) || l.link_type === "extra",
+          );
+          const dynamicExtras = extras.filter((l) => l.link_type === "extra" && !mergedLinks.some((m) => m.url === l.url && m.link_type === "extra"));
+          apiValues = {
+            achievements_text: typeof raw.achievements_text === "string" ? raw.achievements_text : "",
+            role: typeof raw.role === "string" ? raw.role : "",
+            year: typeof raw.year === "string" ? raw.year : "",
+            links: [...mergedLinks, ...dynamicExtras.map((d) => ({ link_type: "extra", label: "Дополнительно", url: d.url ?? "" }))],
+            consent_privacy: Boolean(raw.consent_privacy),
+            consent_parent: Boolean(raw.consent_parent),
+          };
+        }
+        const local = loadDraft<Form>("achievements");
+        reset({ ...buildDefaults(), ...apiValues, ...local });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setMsg("Не удалось загрузить данные. Обновите страницу.");
       }
     }
     void load();
   }, [reset]);
+
+  useEffect(() => {
+    const sub = watch((_, { name }) => {
+      if (name === "consent_privacy" || name === "consent_parent") {
+        saveDraftLocal("achievements", getValues());
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [watch, getValues]);
 
   function buildPayload(data: Form) {
     return {
@@ -104,6 +118,8 @@ export default function AchievementsPage() {
 
   async function saveDraft() {
     setMsg(null);
+    const values = getValues();
+    saveDraftLocal("achievements", values);
     const ok = await trigger();
     if (!ok) {
       setMsg("Заполните все обязательные поля и отметьте согласия.");
@@ -112,7 +128,7 @@ export default function AchievementsPage() {
     try {
       await apiFetch("/candidates/me/application/sections/achievements_activities", {
         method: "PATCH",
-        json: buildPayload(getValues()),
+        json: buildPayload(values),
       });
       bustApiCache("/candidates/me");
       setMsg("Черновик сохранен.");
@@ -129,7 +145,7 @@ export default function AchievementsPage() {
         json: buildPayload(data),
       });
       bustApiCache("/candidates/me");
-      setMsg("Сохранено.");
+      clearDraft("achievements");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Не удалось сохранить");
     }

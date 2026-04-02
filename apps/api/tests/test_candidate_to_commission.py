@@ -24,7 +24,7 @@ def _mock_post_submit():
     """Disable Redis-dependent post-submit jobs."""
     import invision_api.services.stages.initial_screening_service as iss
     original = iss.enqueue_post_submit_jobs
-    iss.enqueue_post_submit_jobs = lambda db, app_id: None
+    iss.enqueue_post_submit_jobs = lambda db, app_id, **_kwargs: None
     return original
 
 
@@ -48,6 +48,21 @@ def _seed_required_documents(db: Session, app_id):
     db.flush()
 
 
+def _seed_supporting_document(db: Session, app_id):
+    doc = Document(
+        id=uuid4(),
+        application_id=app_id,
+        original_filename="id.pdf",
+        mime_type="application/pdf",
+        byte_size=1024,
+        storage_key="uploads/id.pdf",
+        document_type=DocumentType.supporting_documents.value,
+    )
+    db.add(doc)
+    db.flush()
+    return doc
+
+
 def _seed_internal_test(db: Session, app_id):
     """Seed internal test questions and finalized answers so internal_test passes completion."""
     from invision_api.repositories import internal_test_repository
@@ -65,7 +80,7 @@ def _seed_internal_test(db: Session, app_id):
         row.last_saved_at = datetime.now(tz=UTC)
 
 
-def test_full_candidate_to_commission_pipeline(db: Session, factory):
+def test_full_candidate_to_commission_pipeline(db: Session, factory, monkeypatch):
     """
     End-to-end pipeline:
     1. Create candidate + application
@@ -83,16 +98,40 @@ def test_full_candidate_to_commission_pipeline(db: Session, factory):
     profile = factory.profile(db, user, first_name="Марат", last_name="Исмаилов")
     app = factory.application(db, profile, state="draft")
     db.flush()
+    identity_doc = _seed_supporting_document(db, app.id)
 
     save_section(db, user, SectionKey.personal, {
         "preferred_first_name": "Марат",
         "preferred_last_name": "Исмаилов",
+        "date_of_birth": "2007-01-01",
+        "document_type": "id",
+        "citizenship": "KZ",
+        "iin": "070101500001",
+        "document_number": "123456789",
+        "document_issue_date": "2024-01-01",
+        "document_issued_by": "МВД РК",
+        "father_last": "Исмаилов",
+        "father_first": "Петр",
+        "father_phone": "+77011234567",
+        "mother_last": "Исмаилова",
+        "mother_first": "Мария",
+        "mother_phone": "+77017654321",
+        "consent_privacy": True,
+        "consent_age": True,
+        "identity_document_id": str(identity_doc.id),
     })
     save_section(db, user, SectionKey.contact, {
         "phone_e164": "+77017654321",
+        "region": "Алматинская область",
+        "street": "Абая",
+        "house": "10",
+        "apartment": "25",
         "address_line1": "ул. Абая 10",
         "city": "Алматы",
         "country": "KZ",
+        "telegram": "@marat",
+        "consent_privacy": True,
+        "consent_parent": True,
     })
     save_section(db, user, SectionKey.education, {
         "entries": [{"institution_name": "НИШ", "is_current": True}],
@@ -101,7 +140,12 @@ def test_full_candidate_to_commission_pipeline(db: Session, factory):
         "certificate_proof_kind": "ent",
     })
     save_section(db, user, SectionKey.achievements_activities, {
-        "activities": [{"category": "Наука", "title": "Олимпиада по физике"}],
+        "achievements_text": "A" * 260,
+        "role": "Участник",
+        "year": "2025",
+        "links": [],
+        "consent_privacy": True,
+        "consent_parent": True,
     })
     save_section(db, user, SectionKey.leadership_evidence, {
         "items": [{"title": "Президент школьного совета"}],
@@ -143,6 +187,13 @@ def test_full_candidate_to_commission_pipeline(db: Session, factory):
     db.refresh(app)
     pct, missing = completion_percentage(db, app)
     assert pct == 100, f"Expected 100%, got {pct}%. Missing: {[m.value for m in missing]}"
+
+    monkeypatch.setattr("invision_api.services.application_service.redis_ping", lambda: True)
+    monkeypatch.setattr(
+        "invision_api.services.application_service.get_redis_client",
+        lambda: type("_R", (), {"exists": lambda self, *_a: 1})(),
+    )
+    monkeypatch.setattr("invision_api.services.job_dispatcher_service.enqueue_job", lambda *_args, **_kwargs: None)
 
     original = _mock_post_submit()
     try:

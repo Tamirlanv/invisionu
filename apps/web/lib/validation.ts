@@ -82,22 +82,35 @@ export const personalSchema = z.object({
   pronouns: z.string().optional(),
 });
 
-export const contactSchema = z.object({
-  phone_e164: z.string().min(8, { message: "Укажите телефон в формате E.164" }).max(32),
-  country: z.string().length(2, { message: "Код страны ISO-2 (2 буквы)" }),
-  region: z.string().optional(),
-  city: z.string().min(1, { message: "Обязательное поле" }),
-  street: z.string().min(1, { message: "Укажите улицу" }),
-  house: z.string().optional(),
-  apartment: z.string().optional(),
-  address_line2: z.string().optional(),
-  postal_code: z.string().optional(),
-  instagram: z.string().optional(),
-  telegram: z.string().optional(),
-  whatsapp: z.string().optional(),
-  consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
-  consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
-});
+export const contactSchema = z
+  .object({
+    phone_e164: z.string().max(32).optional().or(z.literal("")),
+    country: z.string().length(2, { message: "Код страны ISO-2 (2 буквы)" }),
+    region: z.string().min(1, { message: "Укажите регион" }),
+    city: z.string().min(1, { message: "Обязательное поле" }),
+    street: z.string().min(1, { message: "Укажите улицу" }),
+    house: z.string().min(1, { message: "Укажите дом" }),
+    apartment: z.string().min(1, { message: "Укажите квартиру" }),
+    address_line2: z.string().optional(),
+    postal_code: z.string().optional(),
+    instagram: z.string().optional().or(z.literal("")),
+    telegram: z.string().optional().or(z.literal("")),
+    whatsapp: z.string().optional().or(z.literal("")),
+    consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
+    consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
+  })
+  .superRefine((data, ctx) => {
+    const filled = [data.phone_e164, data.instagram, data.telegram, data.whatsapp].filter(
+      (v) => v && v.trim().length > 1 && v.trim() !== "+" && v.trim() !== "@" && v.trim() !== "+7",
+    );
+    if (filled.length < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Заполните как минимум 2 контактных поля (телефон, Instagram, Telegram или WhatsApp)",
+        path: ["phone_e164"],
+      });
+    }
+  });
 
 const educationEntrySchema = z.object({
   institution_name: z.string().min(1, { message: "Укажите учебное заведение" }),
@@ -114,8 +127,8 @@ export const educationSchema = z.object({
   presentation_video_url: z.string().min(1, { message: "Укажите ссылку на презентацию" }),
   english_proof_kind: z.enum(["ielts_6", "toefl_60_78"]),
   certificate_proof_kind: z.enum(["ent", "nis_12"]),
-  english_document_id: z.string().optional(),
-  certificate_document_id: z.string().optional(),
+  english_document_id: z.string().min(1, { message: "Загрузите документ по английскому языку" }),
+  certificate_document_id: z.string().min(1, { message: "Загрузите сертификат" }),
   additional_document_id: z.string().optional(),
   consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
   consent_parent: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
@@ -195,14 +208,13 @@ export const achievementsSchema = z.object({
     .string()
     .min(250, { message: "Минимальный объем описания — 250 символов." })
     .max(500, { message: "Максимальный объем — 500 символов." }),
-  role: z.string().max(50).optional().or(z.literal("")),
+  role: z.string().min(1, { message: "Укажите вашу роль" }).max(50),
   year: z
     .string()
-    .optional()
-    .or(z.literal(""))
+    .min(1, { message: "Укажите год" })
     .refine(
       (v) => {
-        if (!v || !v.trim()) return true;
+        if (!v || !v.trim()) return false;
         if (!/^\d{4}$/.test(v.trim())) return false;
         const n = Number(v.trim());
         return n >= 2000 && n <= 2035;

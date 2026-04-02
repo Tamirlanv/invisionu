@@ -57,7 +57,11 @@ def get_application(
 
     sections = {s.section_key: {"payload": s.payload, "is_complete": s.is_complete} for s in app.section_states}
     pct, missing = application_service.completion_percentage(db, app)
-    docs = document_repository.list_documents_for_application(db, app.id)
+    referenced = application_service.collect_referenced_document_ids(app)
+    docs = [
+        d for d in document_repository.list_documents_for_application(db, app.id)
+        if d.id in referenced
+    ]
     return {
         "application": {
             "id": str(app.id),
@@ -106,7 +110,11 @@ def review_application(
         raise HTTPException(status_code=404, detail="Заявление не найдено")
 
     pct, missing = application_service.completion_percentage(db, app)
-    docs = document_repository.list_documents_for_application(db, app.id)
+    referenced = application_service.collect_referenced_document_ids(app)
+    docs = [
+        d for d in document_repository.list_documents_for_application(db, app.id)
+        if d.id in referenced
+    ]
     return {
         "application_id": str(app.id),
         "state": app.state,
@@ -178,11 +186,29 @@ def submit(
     user: User = Depends(require_roles(RoleName.candidate)),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    app = application_service.submit_application(db, user)
+    submit_result = application_service.submit_application_with_outcome(db, user)
+    app = submit_result["application"]
     return {
         "application_id": str(app.id),
         "state": app.state,
         "current_stage": app.current_stage,
         "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
         "locked_after_submit": app.locked_after_submit,
+        "submit_outcome": submit_result["submit_outcome"],
+    }
+
+
+@router.post("/me/application/retry-submit")
+def retry_submit(
+    user: User = Depends(require_roles(RoleName.candidate)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    app = application_service.reopen_application_for_resubmit(db, user)
+    return {
+        "application_id": str(app.id),
+        "state": app.state,
+        "current_stage": app.current_stage,
+        "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
+        "locked_after_submit": app.locked_after_submit,
+        "resubmit_available": True,
     }

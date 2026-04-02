@@ -8,6 +8,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { storeAuthTokens, type AuthScope } from "@/lib/auth-session";
 import { loginSchema } from "@/lib/validation";
 import { InputField } from "@/components/auth/InputField";
 import styles from "@/components/auth/auth-register.module.css";
@@ -15,6 +16,7 @@ import styles from "@/components/auth/auth-register.module.css";
 const LOGO_SRC = "/assets/images/Gemini_Generated_Image_7vjh7a7vjh7a7vjh.png";
 
 type Form = z.infer<typeof loginSchema>;
+type TokenResponse = { access_token: string; refresh_token: string };
 
 function LoginFormInner() {
   const router = useRouter();
@@ -33,7 +35,26 @@ function LoginFormInner() {
   async function onSubmit(data: Form) {
     setErr(null);
     try {
-      await apiFetch("/auth/login", { method: "POST", json: data });
+      const auth = await apiFetch<TokenResponse>("/auth/login", { method: "POST", json: data });
+
+      let scope: AuthScope;
+      if (next?.startsWith("/commission")) {
+        scope = "commission";
+      } else if (next?.startsWith("/application")) {
+        scope = "candidate";
+      } else {
+        try {
+          const commissionProbe = await fetch("/api/v1/commission/me", {
+            headers: { Authorization: `Bearer ${auth.access_token}` },
+            credentials: "include",
+            cache: "no-store",
+          });
+          scope = commissionProbe.ok ? "commission" : "candidate";
+        } catch {
+          scope = "candidate";
+        }
+      }
+      storeAuthTokens(scope, { accessToken: auth.access_token, refreshToken: auth.refresh_token });
 
       // If "next" was explicitly requested by middleware, honor it.
       if (next) {
@@ -45,12 +66,7 @@ function LoginFormInner() {
       // Role-aware default landing:
       // - commission users -> /commission
       // - candidate users -> /application/personal
-      try {
-        await apiFetch("/commission/me");
-        router.replace("/commission");
-      } catch {
-        router.replace("/application/personal");
-      }
+      router.replace(scope === "commission" ? "/commission" : "/application/personal");
       router.refresh();
     } catch (e) {
       if (e instanceof ApiError) {

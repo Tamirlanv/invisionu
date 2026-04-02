@@ -13,5 +13,13 @@ describe("permissionsFromRole", () => {
     const p = permissionsFromRole("reviewer");
     expect(p.canSetRubric).toBe(true);
     expect(p.canSetStageStatus).toBe(true);
+    expect(p.canComment).toBe(true);
+    expect(p.canMove).toBe(true);
+  });
+
+  it("keeps viewer in read-only mode", () => {
+    const p = permissionsFromRole("viewer");
+    expect(p.canComment).toBe(false);
+    expect(p.canMove).toBe(false);
   });
 });

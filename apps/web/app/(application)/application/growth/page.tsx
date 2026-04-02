@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
+import { ApiError, apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
 import { growthPathPageSchema } from "@/lib/validation";
 import { GROWTH_CHAR_LIMITS, GROWTH_QUESTIONS, type GrowthQuestionId } from "@/lib/growth-path/constants";
 import {
@@ -19,6 +19,7 @@ import type { GrowthAnswerMetaState } from "@/lib/growth-path/types";
 import { FormSection } from "@/components/application/FormSection";
 import { Divider } from "@/components/application/Divider";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
+import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
 import formStyles from "@/components/application/form-ui.module.css";
 import styles from "./page.module.css";
 
@@ -100,43 +101,70 @@ export default function GrowthPage() {
           2 * 60 * 1000,
         );
         const raw = app.sections.growth_journey?.payload as Record<string, unknown> | undefined;
-        if (!raw) return;
-        let answersRaw = raw.answers as
-          | Record<string, { text?: string; meta?: unknown } | undefined>
-          | undefined;
-        if (!answersRaw && raw.narrative != null) {
-          const n = String(raw.narrative ?? "");
-          answersRaw = {
-            q1: { text: n },
+        let answersRaw: Record<string, { text?: string; meta?: unknown } | undefined> | undefined;
+        if (raw) {
+          answersRaw = raw.answers as typeof answersRaw;
+          if (!answersRaw && raw.narrative != null) {
+            const n = String(raw.narrative ?? "");
+            answersRaw = {
+              q1: { text: n },
+              q2: { text: "" },
+              q3: { text: "" },
+              q4: { text: "" },
+              q5: { text: "" },
+            };
+          }
+        }
+        const apiValues: Partial<GrowthForm> = answersRaw
+          ? {
+              answers: {
+                q1: { text: String(answersRaw.q1?.text ?? "") },
+                q2: { text: String(answersRaw.q2?.text ?? "") },
+                q3: { text: String(answersRaw.q3?.text ?? "") },
+                q4: { text: String(answersRaw.q4?.text ?? "") },
+                q5: { text: String(answersRaw.q5?.text ?? "") },
+              },
+              consent_privacy: raw ? Boolean((raw as Record<string, unknown>).consent_privacy) : false,
+              consent_parent: raw ? Boolean((raw as Record<string, unknown>).consent_parent) : false,
+            }
+          : {};
+        const local = loadDraft<GrowthForm>("growth");
+        const merged = {
+          answers: {
+            q1: { text: "" },
             q2: { text: "" },
             q3: { text: "" },
             q4: { text: "" },
             q5: { text: "" },
-          };
-        }
-        reset({
-          answers: {
-            q1: { text: String(answersRaw?.q1?.text ?? "") },
-            q2: { text: String(answersRaw?.q2?.text ?? "") },
-            q3: { text: String(answersRaw?.q3?.text ?? "") },
-            q4: { text: String(answersRaw?.q4?.text ?? "") },
-            q5: { text: String(answersRaw?.q5?.text ?? "") },
           },
-          consent_privacy: Boolean(raw.consent_privacy),
-          consent_parent: Boolean(raw.consent_parent),
-        });
-        q1.hydrateFromApi(answersRaw?.q1?.meta);
-        q2.hydrateFromApi(answersRaw?.q2?.meta);
-        q3.hydrateFromApi(answersRaw?.q3?.meta);
-        q4.hydrateFromApi(answersRaw?.q4?.meta);
-        q5.hydrateFromApi(answersRaw?.q5?.meta);
-      } catch {
+          ...apiValues,
+          ...local,
+        } as GrowthForm;
+        reset(merged);
+        if (answersRaw) {
+          q1.hydrateFromApi(answersRaw.q1?.meta);
+          q2.hydrateFromApi(answersRaw.q2?.meta);
+          q3.hydrateFromApi(answersRaw.q3?.meta);
+          q4.hydrateFromApi(answersRaw.q4?.meta);
+          q5.hydrateFromApi(answersRaw.q5?.meta);
+        }
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setMsg("Не удалось загрузить раздел. Обновите страницу.");
       }
     }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once on mount; field hooks are stable enough for hydration
   }, [reset]);
+
+  useEffect(() => {
+    const sub = watch((_, { name }) => {
+      if (name === "consent_privacy" || name === "consent_parent") {
+        saveDraftLocal("growth", getValues());
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [watch, getValues]);
 
   function metaRecord(): Record<GrowthQuestionId, GrowthAnswerMetaState> {
     return {
@@ -150,13 +178,14 @@ export default function GrowthPage() {
 
   async function saveDraft() {
     setMsg(null);
+    const data = getValues();
+    saveDraftLocal("growth", data);
     const ok = await trigger();
     if (!ok) {
       setMsg("Заполните все поля в указанных пределах и отметьте согласия.");
       return;
     }
     try {
-      const data = getValues();
       await apiFetch("/candidates/me/application/sections/growth_journey", {
         method: "PATCH",
         json: buildPayload(data, metaRecord()),
@@ -176,7 +205,8 @@ export default function GrowthPage() {
         json: buildPayload(data, metaRecord()),
       });
       bustApiCache("/candidates/me");
-      router.push("/application/portfolio");
+      clearDraft("growth");
+      router.push("/application/achievements");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Не удалось сохранить");
     }

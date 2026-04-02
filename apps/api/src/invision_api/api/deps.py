@@ -100,7 +100,13 @@ def require_commission_role(min_role: CommissionRole) -> Callable[..., User]:
 
 def get_refresh_token_optional(
     invision_refresh: Annotated[str | None, Cookie()] = None,
+    x_refresh_token: Annotated[str | None, Header()] = None,
+    authorization: Annotated[str | None, Header()] = None,
 ) -> str | None:
+    if x_refresh_token:
+        return x_refresh_token
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1].strip()
     return invision_refresh
 
 

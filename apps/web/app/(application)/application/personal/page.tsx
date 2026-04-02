@@ -15,32 +15,34 @@ import { Divider } from "@/components/application/Divider";
 import { SelectField } from "@/components/application/SelectField";
 import { FileUploadField, type UploadedFileDisplay } from "@/components/application/FileUploadField";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
+import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
 import formStyles from "@/components/application/form-ui.module.css";
 
 const personalFormSchema = personalSchema.extend({
   middle_name: z.string().optional(),
-  gender: z.enum(["male", "female"]).optional(),
-  document_type: z.enum(["id", "passport"]).optional(),
-  citizenship: z.string().optional(),
-  iin: z.string().optional(),
-  document_number: z.string().optional(),
-  document_issue_date: z.string().optional(),
-  document_issued_by: z.string().optional(),
-  father_last: z.string().optional(),
-  father_first: z.string().optional(),
+  date_of_birth: z.string().min(1, { message: "Укажите дату рождения" }),
+  gender: z.enum(["male", "female"], { required_error: "Укажите пол" }),
+  document_type: z.enum(["id", "passport"], { required_error: "Выберите тип документа" }),
+  citizenship: z.string().min(1, { message: "Укажите гражданство" }),
+  iin: z.string().min(1, { message: "Укажите ИИН" }),
+  document_number: z.string().min(1, { message: "Укажите номер документа" }),
+  document_issue_date: z.string().min(1, { message: "Укажите дату выдачи" }),
+  document_issued_by: z.string().min(1, { message: "Укажите кем выдан" }),
+  father_last: z.string().min(1, { message: "Укажите фамилию отца" }),
+  father_first: z.string().min(1, { message: "Укажите имя отца" }),
   father_middle: z.string().optional(),
-  father_phone: z.string().optional(),
-  mother_last: z.string().optional(),
-  mother_first: z.string().optional(),
+  father_phone: z.string().min(1, { message: "Укажите телефон отца" }),
+  mother_last: z.string().min(1, { message: "Укажите фамилию матери" }),
+  mother_first: z.string().min(1, { message: "Укажите имя матери" }),
   mother_middle: z.string().optional(),
-  mother_phone: z.string().optional(),
+  mother_phone: z.string().min(1, { message: "Укажите телефон матери" }),
   guardian_last: z.string().optional(),
   guardian_first: z.string().optional(),
   guardian_middle: z.string().optional(),
   guardian_phone: z.string().optional(),
   consent_privacy: z.boolean().refine((v) => v === true, { message: "Необходимо согласие" }),
   consent_age: z.boolean().refine((v) => v === true, { message: "Необходимо подтверждение" }),
-  identity_document_id: z.string().optional(),
+  identity_document_id: z.string().min(1, { message: "Загрузите документ" }),
 });
 
 type PersonalForm = z.infer<typeof personalFormSchema>;
@@ -79,6 +81,7 @@ export default function PersonalPage() {
     reset,
     setValue,
     getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<PersonalForm>({
     resolver: zodResolver(personalFormSchema),
@@ -112,12 +115,11 @@ export default function PersonalPage() {
             method: "PATCH",
             json: {
               payload: {
-                preferred_first_name: firstName,
-                preferred_last_name: lastName,
-                date_of_birth: v.date_of_birth || undefined,
-                pronouns: v.pronouns || undefined,
-                middle_name: v.middle_name || undefined,
-                gender: v.gender,
+                ...buildPayload({
+                  ...v,
+                  preferred_first_name: firstName,
+                  preferred_last_name: lastName,
+                } as PersonalForm),
                 identity_document_id: null,
               },
             },
@@ -180,43 +182,120 @@ export default function PersonalPage() {
         setApplicationId(app.application.id);
         const raw = app.sections.personal?.payload as Record<string, unknown> | undefined;
         const docs = app.documents ?? [];
-        if (!raw) return;
-        const idDoc = raw.identity_document_id != null ? String(raw.identity_document_id) : undefined;
-        reset({
-          ...FORM_DEFAULTS,
-          preferred_first_name: String(raw.preferred_first_name ?? ""),
-          preferred_last_name: String(raw.preferred_last_name ?? ""),
-          date_of_birth: raw.date_of_birth ? String(raw.date_of_birth) : "",
-          pronouns: raw.pronouns ? String(raw.pronouns) : "",
-          middle_name: raw.middle_name != null ? String(raw.middle_name) : "",
-          gender: raw.gender === "female" ? "female" : "male",
-          identity_document_id: idDoc,
-        } as PersonalForm);
+        const apiValues: Partial<PersonalForm> = raw
+          ? {
+              preferred_first_name: String(raw.preferred_first_name ?? ""),
+              preferred_last_name: String(raw.preferred_last_name ?? ""),
+              middle_name: raw.middle_name != null ? String(raw.middle_name) : "",
+              date_of_birth: raw.date_of_birth ? String(raw.date_of_birth) : "",
+              document_type: raw.document_type === "passport" ? "passport" : "id",
+              citizenship: String(raw.citizenship ?? raw.nationality ?? "KZ"),
+              iin: raw.iin != null ? String(raw.iin) : "",
+              document_number: raw.document_number != null ? String(raw.document_number) : "",
+              document_issue_date: raw.document_issue_date ? String(raw.document_issue_date) : "",
+              document_issued_by: raw.document_issued_by != null ? String(raw.document_issued_by) : "",
+              father_last: raw.father_last != null ? String(raw.father_last) : "",
+              father_first: raw.father_first != null ? String(raw.father_first) : "",
+              father_middle: raw.father_middle != null ? String(raw.father_middle) : "",
+              father_phone: raw.father_phone != null ? String(raw.father_phone) : "",
+              mother_last: raw.mother_last != null ? String(raw.mother_last) : "",
+              mother_first: raw.mother_first != null ? String(raw.mother_first) : "",
+              mother_middle: raw.mother_middle != null ? String(raw.mother_middle) : "",
+              mother_phone: raw.mother_phone != null ? String(raw.mother_phone) : "",
+              guardian_last: raw.guardian_last != null ? String(raw.guardian_last) : "",
+              guardian_first: raw.guardian_first != null ? String(raw.guardian_first) : "",
+              guardian_middle: raw.guardian_middle != null ? String(raw.guardian_middle) : "",
+              guardian_phone: raw.guardian_phone != null ? String(raw.guardian_phone) : "",
+              consent_privacy: Boolean(raw.consent_privacy),
+              consent_age: Boolean(raw.consent_age),
+              pronouns: raw.pronouns ? String(raw.pronouns) : "",
+              gender: raw.gender === "female" ? "female" : "male",
+              identity_document_id: raw.identity_document_id != null ? String(raw.identity_document_id) : undefined,
+            }
+          : {};
+        const local = loadDraft<PersonalForm>("personal");
+        const merged = { ...FORM_DEFAULTS, ...apiValues, ...local } as PersonalForm;
+        reset(merged);
+        const idDoc = merged.identity_document_id;
         setIdentityFileMeta(docMetaForId(docs, idDoc));
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setPageMsg("Не удалось загрузить данные заявления. Обновите страницу.");
       }
     }
     void load();
   }, [reset]);
 
-  async function onSubmit(data: PersonalForm) {
-    /** Поля, совместимые с API `PersonalSectionPayload` (остальное — локальный UI до расширения бэкенда). */
-    const payload = {
+  useEffect(() => {
+    const sub = watch((_, { name }) => {
+      if (name === "consent_privacy" || name === "consent_age") {
+        saveDraftLocal("personal", getValues());
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [watch, getValues]);
+
+  function buildPayload(data: PersonalForm) {
+    return {
       preferred_first_name: data.preferred_first_name,
       preferred_last_name: data.preferred_last_name,
-      date_of_birth: data.date_of_birth || undefined,
-      pronouns: data.pronouns || undefined,
       middle_name: data.middle_name || undefined,
+      date_of_birth: data.date_of_birth || undefined,
+      document_type: data.document_type || undefined,
+      citizenship: data.citizenship || undefined,
+      iin: data.iin || undefined,
+      document_number: data.document_number || undefined,
+      document_issue_date: data.document_issue_date || undefined,
+      document_issued_by: data.document_issued_by || undefined,
+      father_last: data.father_last || undefined,
+      father_first: data.father_first || undefined,
+      father_middle: data.father_middle || undefined,
+      father_phone: data.father_phone || undefined,
+      mother_last: data.mother_last || undefined,
+      mother_first: data.mother_first || undefined,
+      mother_middle: data.mother_middle || undefined,
+      mother_phone: data.mother_phone || undefined,
+      guardian_last: data.guardian_last || undefined,
+      guardian_first: data.guardian_first || undefined,
+      guardian_middle: data.guardian_middle || undefined,
+      guardian_phone: data.guardian_phone || undefined,
+      consent_privacy: data.consent_privacy,
+      consent_age: data.consent_age,
+      pronouns: data.pronouns || undefined,
       gender: data.gender,
       identity_document_id: isUuid(data.identity_document_id) ? data.identity_document_id : undefined,
     };
-    await apiFetch("/candidates/me/application/sections/personal", {
-      method: "PATCH",
-      json: { payload },
-    });
-    bustApiCache("/candidates/me");
-    router.push("/application/contact");
+  }
+
+  async function saveDraft() {
+    setPageMsg(null);
+    const values = getValues();
+    saveDraftLocal("personal", values);
+    try {
+      await apiFetch("/candidates/me/application/sections/personal", {
+        method: "PATCH",
+        json: { payload: buildPayload(values) },
+      });
+      bustApiCache("/candidates/me");
+      setPageMsg("Черновик сохранен.");
+    } catch (e) {
+      setPageMsg(e instanceof Error ? e.message : "Не удалось сохранить черновик");
+    }
+  }
+
+  async function onSubmit(data: PersonalForm) {
+    setPageMsg(null);
+    try {
+      await apiFetch("/candidates/me/application/sections/personal", {
+        method: "PATCH",
+        json: { payload: buildPayload(data) },
+      });
+      bustApiCache("/candidates/me");
+      clearDraft("personal");
+      router.push("/application/contact");
+    } catch (e) {
+      setPageMsg(e instanceof Error ? e.message : "Не удалось сохранить");
+    }
   }
 
   return (
@@ -259,9 +338,9 @@ export default function PersonalPage() {
             />
           </div>
         </div>
-        {(errors.preferred_first_name || errors.preferred_last_name) && (
+        {(errors.preferred_first_name || errors.preferred_last_name || errors.date_of_birth) && (
           <p className="error" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>
-            {errors.preferred_first_name?.message || errors.preferred_last_name?.message}
+            {errors.preferred_first_name?.message || errors.preferred_last_name?.message || errors.date_of_birth?.message}
           </p>
         )}
       </FormSection>
@@ -306,6 +385,11 @@ export default function PersonalPage() {
           <FormField label="Выдан" placeholder="Введите кем выдан" {...register("document_issued_by")} />
         </div>
         <input type="hidden" {...register("identity_document_id")} />
+        {(errors.citizenship || errors.iin || errors.document_number || errors.document_issue_date || errors.document_issued_by) && (
+          <p className="error" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>
+            {errors.citizenship?.message || errors.iin?.message || errors.document_number?.message || errors.document_issue_date?.message || errors.document_issued_by?.message}
+          </p>
+        )}
         <FileUploadField
           label="Ваш документ"
           hint="Разрешенные форматы: .PDF .JPEG .PNG .HEIC до 10MB"
@@ -313,6 +397,11 @@ export default function PersonalPage() {
           isUploading={identityUploading}
           onFile={(f) => void uploadIdentityDocument(f)}
         />
+        {errors.identity_document_id && (
+          <p className="error" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>
+            {errors.identity_document_id.message}
+          </p>
+        )}
       </FormSection>
 
       <Divider />
@@ -327,6 +416,11 @@ export default function PersonalPage() {
         <div className={formStyles.row3}>
           <FormField label="Номер телефона" placeholder="+7 777 123 45 67" type="tel" fieldType="phone" {...register("father_phone")} />
         </div>
+        {(errors.father_last || errors.father_first || errors.father_phone) && (
+          <p className="error" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>
+            {errors.father_last?.message || errors.father_first?.message || errors.father_phone?.message}
+          </p>
+        )}
 
         <h3 className={formStyles.subheading}>Мать</h3>
         <div className={formStyles.row3}>
@@ -337,6 +431,11 @@ export default function PersonalPage() {
         <div className={formStyles.row3}>
           <FormField label="Номер телефона" placeholder="+7 777 123 45 67" type="tel" fieldType="phone" {...register("mother_phone")} />
         </div>
+        {(errors.mother_last || errors.mother_first || errors.mother_phone) && (
+          <p className="error" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>
+            {errors.mother_last?.message || errors.mother_first?.message || errors.mother_phone?.message}
+          </p>
+        )}
 
         <h3 className={formStyles.subheading}>Опекун</h3>
         <div className={formStyles.row3}>
@@ -389,7 +488,16 @@ export default function PersonalPage() {
 
       <Divider />
 
+      {pageMsg && !pageMsg.includes("Не удалось загрузить") && (
+        <p className={pageMsg.includes("Не удалось") ? "error" : "muted"} role="status">
+          {pageMsg}
+        </p>
+      )}
+
       <div className={formStyles.formFooter}>
+        <button type="button" className="btn secondary" onClick={() => void saveDraft()} disabled={isSubmitting}>
+          Сохранить черновик
+        </button>
         <button type="submit" className="btn" disabled={isSubmitting}>
           {isSubmitting ? "Сохранение…" : "Далее"}
         </button>

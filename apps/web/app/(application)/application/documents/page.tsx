@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
+import { ApiError, apiFetch, apiFetchCached, bustApiCache } from "@/lib/api-client";
 import { FormSection } from "@/components/application/FormSection";
 import { Divider } from "@/components/application/Divider";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
@@ -52,7 +52,8 @@ export default function DocumentsPage() {
           acknowledged_required_documents: Boolean(raw.acknowledged_required_documents),
           notes: raw.notes != null ? String(raw.notes) : "",
         });
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return;
         setMsg("Не удалось загрузить данные. Обновите страницу.");
       }
     }

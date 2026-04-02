@@ -25,6 +25,7 @@ from invision_api.models.commission import (
     InternalRecommendationRow,
     ReviewRubricScore,
 )
+from invision_api.models.user import User
 from invision_api.models.candidate_validation_orchestration import CandidateValidationCheck, CandidateValidationRun
 
 
@@ -228,6 +229,27 @@ def list_comments(db: Session, application_id: UUID, limit: int = 100) -> list[A
     return list(db.scalars(stmt).all())
 
 
+def list_comments_with_author(db: Session, application_id: UUID, limit: int = 100) -> list[dict[str, Any]]:
+    stmt = (
+        select(ApplicationComment, User.email)
+        .outerjoin(User, User.id == ApplicationComment.author_user_id)
+        .where(ApplicationComment.application_id == application_id)
+        .order_by(ApplicationComment.created_at.desc())
+        .limit(limit)
+    )
+    rows = db.execute(stmt).all()
+    return [
+        {
+            "id": row[0].id,
+            "text": row[0].body,
+            "author_user_id": row[0].author_user_id,
+            "author_name": row[1] if isinstance(row[1], str) else None,
+            "created_at": row[0].created_at,
+        }
+        for row in rows
+    ]
+
+
 def upsert_rubric_score(
     db: Session,
     *,
@@ -371,13 +393,34 @@ def get_latest_validation_report(db: Session, application_id: UUID) -> dict[str,
     checks = list(
         db.scalars(select(CandidateValidationCheck).where(CandidateValidationCheck.run_id == run.id)).all()
     )
-    checks_map: dict[str, Any] = {"links": None, "videoPresentation": None, "certificates": None}
+    checks_map: dict[str, Any] = {
+        "links": None,
+        "videoPresentation": None,
+        "certificates": None,
+        "test_profile_processing": None,
+        "motivation_processing": None,
+        "growth_path_processing": None,
+        "achievements_processing": None,
+        "link_validation": None,
+        "video_validation": None,
+        "certificate_validation": None,
+        "signals_aggregation": None,
+        "candidate_ai_summary": None,
+    }
+    aliases = {
+        "links": "link_validation",
+        "videoPresentation": "video_validation",
+        "certificates": "certificate_validation",
+    }
     for c in checks:
         checks_map[c.check_type] = {
             "status": c.status,
             "result": c.result_payload,
             "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
         }
+        alias = aliases.get(c.check_type)
+        if alias:
+            checks_map[alias] = checks_map[c.check_type]
     return {
         "runId": str(run.id),
         "candidateId": str(run.candidate_id),

@@ -33,7 +33,10 @@ from invision_api.models.application import (  # noqa: E402
     ApplicationStageHistory,
     CandidateProfile,
 )
+from invision_api.models.application_raw_submission_snapshot import ApplicationRawSubmissionSnapshot  # noqa: E402
+from invision_api.models.candidate_signals_aggregate import CandidateSignalsAggregate  # noqa: E402
 from invision_api.models.commission import ApplicationCommissionProjection  # noqa: E402
+from invision_api.models.data_check_unit_result import DataCheckUnitResult  # noqa: E402
 from invision_api.models.enums import ApplicationStage, ApplicationState, SectionKey  # noqa: E402
 from invision_api.models.user import Role, User, UserRole  # noqa: E402
 
@@ -149,12 +152,35 @@ class Factory:
             SectionKey.personal.value: {
                 "preferred_first_name": "Тест",
                 "preferred_last_name": "Кандидат",
+                "date_of_birth": "2007-01-01",
+                "document_type": "id",
+                "citizenship": "KZ",
+                "iin": "070101500001",
+                "document_number": "123456789",
+                "document_issue_date": "2024-01-01",
+                "document_issued_by": "МВД РК",
+                "father_last": "Кандидатов",
+                "father_first": "Петр",
+                "father_phone": "+77011234567",
+                "mother_last": "Кандидатова",
+                "mother_first": "Мария",
+                "mother_phone": "+77017654321",
+                "consent_privacy": True,
+                "consent_age": True,
+                "identity_document_id": str(uuid4()),
             },
             SectionKey.contact.value: {
                 "phone_e164": "+77001234567",
                 "address_line1": "ул. Тестовая 1",
+                "region": "Алматинская область",
                 "city": "Алматы",
+                "street": "Тестовая",
+                "house": "1",
+                "apartment": "10",
                 "country": "KZ",
+                "telegram": "@test",
+                "consent_privacy": True,
+                "consent_parent": True,
             },
             SectionKey.education.value: {
                 "entries": [{"institution_name": "Школа №1", "is_current": False}],
@@ -212,3 +238,11 @@ class Factory:
 @pytest.fixture
 def factory() -> Factory:
     return Factory()
+
+
+@pytest.fixture(autouse=True)
+def ensure_data_check_tables(db: Session) -> None:
+    bind = db.get_bind()
+    ApplicationRawSubmissionSnapshot.__table__.create(bind=bind, checkfirst=True)
+    DataCheckUnitResult.__table__.create(bind=bind, checkfirst=True)
+    CandidateSignalsAggregate.__table__.create(bind=bind, checkfirst=True)

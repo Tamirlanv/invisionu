@@ -8,6 +8,8 @@ import type {
   CommissionBoardMetrics,
   CommissionBoardResponse,
   CommissionApplicationDetailView,
+  CommissionApplicationPersonalInfoView,
+  CommissionApplicationTestInfoView,
   CommissionRange,
   CommissionRole,
   CommissionStage,
@@ -161,6 +163,12 @@ export async function getCommissionApplicationDetail(applicationId: string): Pro
   return await apiFetch<CommissionApplicationDetailView>(`/commission/applications/${applicationId}`);
 }
 
+export async function getCommissionApplicationPersonalInfo(
+  applicationId: string,
+): Promise<CommissionApplicationPersonalInfoView> {
+  return await apiFetch<CommissionApplicationPersonalInfoView>(`/commission/applications/${applicationId}/personal-info`);
+}
+
 export async function getApplicationAuditPreview(applicationId: string): Promise<CommissionApplicationDetailView["recentActivity"]> {
   return await apiFetch<CommissionApplicationDetailView["recentActivity"]>(`/commission/applications/${applicationId}/audit`);
 }
@@ -206,5 +214,19 @@ export async function createApplicationComment(applicationId: string, body: stri
     method: "POST",
     json: { body },
   });
+}
+
+export async function deleteCommissionApplication(applicationId: string): Promise<void> {
+  await apiFetch(`/commission/applications/${applicationId}`, { method: "DELETE" });
+}
+
+export async function getCommissionApplicationTestInfo(
+  applicationId: string,
+): Promise<CommissionApplicationTestInfoView> {
+  return await apiFetch<CommissionApplicationTestInfoView>(`/commission/applications/${applicationId}/test-info`);
+}
+
+export async function createCommissionComment(applicationId: string, body: string): Promise<void> {
+  await createApplicationComment(applicationId, body);
 }
 

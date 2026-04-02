@@ -168,3 +168,109 @@ export type CommissionApplicationDetailView = {
   }>;
 };
 
+export type CommissionApplicationPersonalInfoView = {
+  applicationId: string;
+  candidateSummary: {
+    fullName: string;
+    program: string | null;
+    phone: string | null;
+    telegram: string | null;
+    instagram: string | null;
+    submittedAt: string | null;
+    currentStage: CommissionStage | string;
+    currentStageStatus: StageStatus | string;
+  };
+  aiSummary: {
+    profileTitle: string | null;
+    summaryText: string | null;
+    strengths: string[];
+    weakPoints: string[];
+  } | null;
+  stageContext: {
+    currentStage: CommissionStage | string;
+    currentStageStatus: StageStatus | string;
+    availableActions: string[];
+  };
+  personalInfo: {
+    basicInfo: {
+      fullName: string;
+      gender: string | null;
+      birthDate: string | null;
+      age: number | null;
+    };
+    guardians: Array<{
+      role: string;
+      fullName: string;
+      phone: string | null;
+    }>;
+    address: {
+      country: string | null;
+      region: string | null;
+      city: string | null;
+      fullAddress: string | null;
+    };
+    contacts: {
+      phone: string | null;
+      instagram: string | null;
+      telegram: string | null;
+      whatsapp: string | null;
+    };
+    documents: Array<{
+      id: string;
+      type: string;
+      fileName: string;
+      fileSize: string | null;
+      fileUrl: string | null;
+      fileRef: string | null;
+    }>;
+    videoPresentation: {
+      url: string;
+    } | null;
+  };
+  processingStatus: {
+    overall: "pending" | "running" | "partial" | "ready" | "failed";
+    completedCount: number;
+    totalCount: number;
+    units: Record<string, string>;
+    manualReviewRequired: boolean;
+    warnings: string[];
+    errors: string[];
+  } | null;
+  comments: Array<{
+    id: string;
+    text: string;
+    authorName: string;
+    createdAt: string | null;
+  }>;
+  actions: {
+    canComment: boolean;
+    canMoveForward: boolean;
+  };
+};
+
+export type CommissionApplicationTestInfoView = {
+  personalityProfile: {
+    profileType: string;
+    profileTitle: string;
+    summary: string;
+    rawScores: Record<string, number>;
+    ranking: Array<{ trait: string; score: number }>;
+    dominantTrait: string;
+    secondaryTrait: string;
+    weakestTrait: string;
+    flags?: Record<string, boolean>;
+    meta?: Record<string, unknown>;
+  } | null;
+  testLang: string;
+  questions: Array<{
+    index: number;
+    questionId: string;
+    prompt: string;
+    selectedAnswer: string | null;
+  }>;
+  aiSummary: {
+    aboutCandidate: string | null;
+    weakPoints: string[];
+  } | null;
+};
+

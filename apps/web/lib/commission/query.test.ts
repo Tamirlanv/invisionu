@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { mapApiCard, rangeFromQuery } from "./query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../api-client", () => ({
+  apiFetch: vi.fn(),
+}));
+
+import { apiFetch } from "../api-client";
+import { createCommissionComment, getCommissionApplicationPersonalInfo, mapApiCard, rangeFromQuery } from "./query";
+
+const apiFetchMock = vi.mocked(apiFetch);
 
 describe("commission query", () => {
+  beforeEach(() => {
+    apiFetchMock.mockReset();
+  });
+
   it("maps snake_case api card", () => {
     const out = mapApiCard({
       application_id: "abc",
@@ -18,6 +30,21 @@ describe("commission query", () => {
 
   it("normalizes unsupported range to week", () => {
     expect(rangeFromQuery("bad")).toBe("week");
+  });
+
+  it("requests personal-info view endpoint", async () => {
+    apiFetchMock.mockResolvedValue({ applicationId: "abc" } as never);
+    await getCommissionApplicationPersonalInfo("abc");
+    expect(apiFetchMock).toHaveBeenCalledWith("/commission/applications/abc/personal-info");
+  });
+
+  it("posts internal commission comment", async () => {
+    apiFetchMock.mockResolvedValue(undefined as never);
+    await createCommissionComment("abc", "note");
+    expect(apiFetchMock).toHaveBeenCalledWith("/commission/applications/abc/comments", {
+      method: "POST",
+      json: { body: "note" },
+    });
   });
 });
 

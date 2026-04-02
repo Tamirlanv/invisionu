@@ -21,6 +21,9 @@ def save_draft_answers(
     db: Session,
     user: User,
     answers: list[dict[str, Any]],
+    *,
+    consent_privacy: bool = False,
+    consent_parent: bool = False,
 ) -> list[InternalTestAnswer]:
     _, app = application_service.get_profile_and_application(db, user)
     application_service._ensure_editable(app)  # noqa: SLF001
@@ -73,8 +76,11 @@ def save_draft_answers(
             db.add(row)
         out.append(row)
 
-    payload = InternalTestSectionPayload().model_dump()
-    validated = InternalTestSectionPayload.model_validate(payload)
+    validated = InternalTestSectionPayload(
+        consent_privacy=consent_privacy,
+        consent_parent=consent_parent,
+    )
+    payload = validated.model_dump()
     is_complete = application_service.compute_section_complete(db, app, SectionKey.internal_test, validated)
     application_service.upsert_section_state(db, app, SectionKey.internal_test, payload, is_complete)
     if app.state == ApplicationState.draft.value:
@@ -84,6 +90,26 @@ def save_draft_answers(
     for r in out:
         db.refresh(r)
     return out
+
+
+def get_saved_answers_state(db: Session, user: User) -> dict[str, Any]:
+    _, app = application_service.get_profile_and_application(db, user)
+    answers = internal_test_repository.list_answers_for_application(db, app.id)
+    state = next((s for s in app.section_states if s.section_key == SectionKey.internal_test.value), None)
+    payload = state.payload if state and isinstance(state.payload, dict) else {}
+    return {
+        "answers": [
+            {
+                "question_id": str(a.question_id),
+                "text_answer": a.text_answer,
+                "selected_options": a.selected_options or [],
+                "is_finalized": a.is_finalized,
+            }
+            for a in answers
+        ],
+        "consent_privacy": bool(payload.get("consent_privacy", False)),
+        "consent_parent": bool(payload.get("consent_parent", False)),
+    }
 
 
 def submit_internal_test(db: Session, user: User) -> None:
@@ -111,8 +137,16 @@ def submit_internal_test(db: Session, user: User) -> None:
         ans.submitted_at = now
         ans.is_finalized = True
 
-    payload = InternalTestSectionPayload().model_dump()
-    validated = InternalTestSectionPayload.model_validate(payload)
+    existing_state = next(
+        (s for s in app.section_states if s.section_key == SectionKey.internal_test.value),
+        None,
+    )
+    existing_payload = (existing_state.payload if existing_state else None) or {}
+    validated = InternalTestSectionPayload(
+        consent_privacy=existing_payload.get("consent_privacy", False),
+        consent_parent=existing_payload.get("consent_parent", False),
+    )
+    payload = validated.model_dump()
     is_complete = application_service.compute_section_complete(db, app, SectionKey.internal_test, validated)
     application_service.upsert_section_state(db, app, SectionKey.internal_test, payload, is_complete)
     db.commit()

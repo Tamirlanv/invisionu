@@ -22,6 +22,8 @@ class AnswerItem(BaseModel):
 
 class BulkAnswersBody(BaseModel):
     answers: list[AnswerItem] = Field(default_factory=list)
+    consent_privacy: bool = False
+    consent_parent: bool = False
 
 
 @router.get("/questions")
@@ -50,8 +52,22 @@ def save_answers(
     user: User = Depends(require_roles(RoleName.candidate)),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    saved = internal_test_service.save_draft_answers(db, user, [a.model_dump() for a in body.answers])
+    saved = internal_test_service.save_draft_answers(
+        db,
+        user,
+        [a.model_dump() for a in body.answers],
+        consent_privacy=body.consent_privacy,
+        consent_parent=body.consent_parent,
+    )
     return {"saved": len(saved), "answer_ids": [str(s.id) for s in saved]}
+
+
+@router.get("/answers")
+def get_answers(
+    user: User = Depends(require_roles(RoleName.candidate)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return internal_test_service.get_saved_answers_state(db, user)
 
 
 @router.post("/submit")

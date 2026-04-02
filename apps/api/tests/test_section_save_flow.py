@@ -2,7 +2,10 @@
 
 import pytest
 from sqlalchemy.orm import Session
+from uuid import uuid4
 
+from invision_api.models.application import Document
+from invision_api.models.enums import DocumentType
 from invision_api.models.enums import ApplicationState, SectionKey
 from invision_api.services.application_service import save_section
 
@@ -14,11 +17,37 @@ def test_save_personal_section_updates_profile(db: Session, factory):
     factory.assign_role(db, user, role)
     profile = factory.profile(db, user)
     app = factory.application(db, profile)
+    identity_doc = Document(
+        id=uuid4(),
+        application_id=app.id,
+        original_filename="id.pdf",
+        mime_type="application/pdf",
+        byte_size=1024,
+        storage_key="uploads/id.pdf",
+        document_type=DocumentType.supporting_documents.value,
+    )
+    db.add(identity_doc)
     db.commit()
 
     row = save_section(db, user, SectionKey.personal, {
         "preferred_first_name": "Новое",
         "preferred_last_name": "Имя",
+        "date_of_birth": "2007-01-01",
+        "document_type": "id",
+        "citizenship": "KZ",
+        "iin": "070101500001",
+        "document_number": "123456789",
+        "document_issue_date": "2024-01-01",
+        "document_issued_by": "МВД РК",
+        "father_last": "Имя",
+        "father_first": "Отец",
+        "father_phone": "+77011234567",
+        "mother_last": "Имя",
+        "mother_first": "Мать",
+        "mother_phone": "+77017654321",
+        "consent_privacy": True,
+        "consent_age": True,
+        "identity_document_id": str(identity_doc.id),
     })
     assert row.is_complete is True
     assert profile.first_name == "Новое"

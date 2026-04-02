@@ -129,12 +129,38 @@ def build_status(db: Session, user: User) -> dict[str, Any]:
             }
         )
 
+    submitted_at = app.submitted_at
+    queue_failures = [
+        j for j in (app.analysis_jobs or [])
+        if submitted_at is not None
+        and isinstance(j.last_error, str)
+        and j.last_error.startswith("queue_enqueue_failed:")
+        and j.created_at is not None
+        and j.created_at >= submitted_at
+    ]
+    queue_failures_count = len(queue_failures)
+    queue_status = "degraded" if queue_failures_count > 0 else "ready"
+    queue_message = None
+    if queue_failures_count == 1:
+        queue_message = (
+            "Анкета отправлена, но один фоновый шаг обработки поставлен с ошибкой. "
+            "Система повторит обработку после восстановления сервиса."
+        )
+    elif queue_failures_count > 1:
+        queue_message = (
+            f"Анкета отправлена, но {queue_failures_count} фоновых шагов обработки поставлены с ошибкой. "
+            "Система повторит обработку после восстановления сервиса."
+        )
+
     return {
         "current_stage": app.current_stage,
         "submission_state": {
             "state": app.state,
             "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
             "locked": app.locked_after_submit,
+            "queue_status": queue_status,
+            "queue_failures_count": queue_failures_count,
+            "queue_message": queue_message,
         },
         "stage_history": history,
         "stage_descriptions": STAGE_DESCRIPTIONS,

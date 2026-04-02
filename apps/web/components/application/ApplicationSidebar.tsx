@@ -1,17 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ApiError, apiFetchCached } from "@/lib/api-client";
+import { CANDIDATE_STAGE_PIPELINE, getCandidateStageIndex } from "@/lib/application-stage";
+import type { CandidateApplicationStatus } from "@/lib/candidate-status";
 import { CAMPAIGN_DURATION_MS, getAdmissionDeadlineMs } from "@/lib/deadline";
 import styles from "./application-sidebar.module.css";
-
-const PIPELINE_STEPS = [
-  "Подача анкеты",
-  "Проверка данных",
-  "Оценка заявки",
-  "Собеседование",
-  "Решение комиссии",
-  "Результат",
-] as const;
 
 const DOC_CHECKLIST = [
   "Паспорт/ID",
@@ -20,8 +14,13 @@ const DOC_CHECKLIST = [
   "Результаты ЕНТ/Сертификат 12 классов NIS",
 ];
 
-/** Индекс текущего этапа (0…5); позже можно подставить из API. */
-const ACTIVE_STEP_INDEX = 0;
+const STATUS_TTL_MS = 2 * 60 * 1000;
+
+type Props = {
+  statusData?: CandidateApplicationStatus | null;
+  statusError?: string | null;
+  statusLoading?: boolean;
+};
 
 function StepDot({ active }: { active: boolean }) {
   return (
@@ -67,11 +66,41 @@ function useDeadlineCountdown() {
   return { parts, ringRatio };
 }
 
-export function ApplicationSidebar() {
+export function ApplicationSidebar({ statusData, statusError: externalStatusError, statusLoading = false }: Props) {
   const { parts, ringRatio } = useDeadlineCountdown();
+  const [status, setStatus] = useState<CandidateApplicationStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (statusData !== undefined) {
+      setStatus(statusData);
+      setStatusError(externalStatusError ?? null);
+      return;
+    }
+    let cancelled = false;
+    async function loadStatus() {
+      try {
+        const data = await apiFetchCached<CandidateApplicationStatus>("/candidates/me/application/status", STATUS_TTL_MS);
+        if (cancelled) return;
+        setStatus(data);
+        setStatusError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setStatusError(error instanceof ApiError ? error.message : "Не удалось загрузить статус этапа.");
+      }
+    }
+    void loadStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [statusData, externalStatusError]);
+
   const offset = CIRC * (1 - ringRatio);
-  const activeLabel = PIPELINE_STEPS[ACTIVE_STEP_INDEX];
-  const followingSteps = PIPELINE_STEPS.slice(ACTIVE_STEP_INDEX + 1);
+  const activeStepIndex = getCandidateStageIndex(status?.current_stage);
+  const stageItems = CANDIDATE_STAGE_PIPELINE.map((item, idx) => ({
+    ...item,
+    reached: idx <= activeStepIndex,
+  }));
 
   return (
     <aside className={styles.sidebar}>
@@ -114,50 +143,39 @@ export function ApplicationSidebar() {
       </div>
 
       <div className={styles.stepsCard}>
-        <div className={styles.stepsRow}>
-          <div className={styles.stepsListContainer}>
-            <div className={styles.stepsTitleRow}>
-              <p className={styles.stepsTitleText}>Этап</p>
-              <p className={styles.stepsTitleText}>
-                {ACTIVE_STEP_INDEX + 1}/{PIPELINE_STEPS.length}
-              </p>
-            </div>
-            <div className={styles.stepList}>
-              <div className={styles.stepItem}>
-                <StepDot active />
-                <p className={styles.labelActive}>{activeLabel}</p>
-              </div>
-              {followingSteps.length > 0 ? (
-                <div className={styles.lowerSteps}>
-                  <div className={styles.connectorOverlay} aria-hidden>
-                    <div className={styles.connectorRotate}>
-                      <svg
-                        viewBox="0 0 24 4"
-                        fill="none"
-                        preserveAspectRatio="none"
-                        className={styles.connectorSvg}
-                      >
-                        <path
-                          d="M2 2H22"
-                          stroke="#98DA00"
-                          strokeWidth="4"
-                          strokeLinecap="round"
-                          strokeDasharray="0.1 12"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className={styles.stepItemList}>
-                    {followingSteps.map((label) => (
-                      <div key={label} className={styles.stepItem}>
-                        <StepDot active={false} />
-                        <p className={styles.labelInactive}>{label}</p>
-                      </div>
-                    ))}
-                  </div>
+        <div className={styles.stepsListContainer}>
+          {/* Title row: "Этап X/6" */}
+          <div className={styles.stepsTitleRow}>
+            <p className={styles.stepsTitleText}>Этап</p>
+            <p className={styles.stepsTitleText}>
+              {statusLoading && !status ? "—" : `${activeStepIndex + 1}/${CANDIDATE_STAGE_PIPELINE.length}`}
+            </p>
+          </div>
+
+          {/* Stage list */}
+          <div className={styles.stepList}>
+            {stageItems.map((step, idx) => (
+              <div key={step.stage}>
+                <div className={styles.stepItem}>
+                  <StepDot active={step.reached} />
+                  <p className={step.reached ? styles.labelActive : styles.labelInactive}>{step.label}</p>
                 </div>
-              ) : null}
-            </div>
+                {/* Dotted connector after current active stage */}
+                {idx === activeStepIndex && idx < stageItems.length - 1 ? (
+                  <div className={styles.stageConnector} aria-hidden>
+                    <svg width="4" height="20" viewBox="0 0 4 20" fill="none">
+                      <path
+                        d="M2 2V18"
+                        stroke="#98DA00"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeDasharray="0.1 8"
+                      />
+                    </svg>
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
         </div>
       </div>

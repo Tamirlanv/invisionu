@@ -45,6 +45,26 @@ class PersonalSectionPayload(BaseModel):
     preferred_last_name: str = Field(min_length=1, max_length=128)
     middle_name: str | None = Field(default=None, max_length=128)
     date_of_birth: date | None = None
+    document_type: str | None = Field(default=None, max_length=32)
+    citizenship: str | None = Field(default=None, max_length=128)
+    iin: str | None = Field(default=None, max_length=32)
+    document_number: str | None = Field(default=None, max_length=64)
+    document_issue_date: date | None = None
+    document_issued_by: str | None = Field(default=None, max_length=255)
+    father_last: str | None = Field(default=None, max_length=128)
+    father_first: str | None = Field(default=None, max_length=128)
+    father_middle: str | None = Field(default=None, max_length=128)
+    father_phone: str | None = Field(default=None, max_length=32)
+    mother_last: str | None = Field(default=None, max_length=128)
+    mother_first: str | None = Field(default=None, max_length=128)
+    mother_middle: str | None = Field(default=None, max_length=128)
+    mother_phone: str | None = Field(default=None, max_length=32)
+    guardian_last: str | None = Field(default=None, max_length=128)
+    guardian_first: str | None = Field(default=None, max_length=128)
+    guardian_middle: str | None = Field(default=None, max_length=128)
+    guardian_phone: str | None = Field(default=None, max_length=32)
+    consent_privacy: bool = False
+    consent_age: bool = False
     pronouns: str | None = Field(default=None, max_length=64)
     gender: str | None = Field(default=None, max_length=64)
     nationality: str | None = Field(default=None, max_length=128)
@@ -56,6 +76,11 @@ class PersonalSectionPayload(BaseModel):
     @field_validator("date_of_birth", mode="before")
     @classmethod
     def parse_date_of_birth(cls, v: Any) -> date | None:
+        return parse_optional_date(v)
+
+    @field_validator("document_issue_date", mode="before")
+    @classmethod
+    def parse_document_issue_date(cls, v: Any) -> date | None:
         return parse_optional_date(v)
 
 
@@ -80,6 +105,8 @@ class ContactSectionPayload(BaseModel):
     guardian_email: str | None = Field(default=None, max_length=255)
     emergency_contact_name: str | None = Field(default=None, max_length=255)
     emergency_contact_phone_e164: str | None = Field(default=None, max_length=32)
+    consent_privacy: bool = False
+    consent_parent: bool = False
 
 
 class EducationItemPayload(BaseModel):
@@ -251,6 +278,8 @@ class InternalTestSectionPayload(BaseModel):
     """Placeholder in section state; real answers live in internal_test_answers."""
 
     acknowledged_instructions: bool = True
+    consent_privacy: bool = False
+    consent_parent: bool = False
 
 
 class SocialStatusSectionPayload(BaseModel):

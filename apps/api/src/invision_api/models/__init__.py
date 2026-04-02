@@ -43,5 +43,8 @@ from invision_api.models.candidate_validation_orchestration import (  # noqa: F4
     CandidateValidationCheck,
     CandidateValidationRun,
 )
+from invision_api.models.application_raw_submission_snapshot import ApplicationRawSubmissionSnapshot  # noqa: F401
+from invision_api.models.candidate_signals_aggregate import CandidateSignalsAggregate  # noqa: F401
+from invision_api.models.data_check_unit_result import DataCheckUnitResult  # noqa: F401
 from invision_api.models.video_validation import VideoValidationResultRow  # noqa: F401
 from invision_api.models.user import Role, User, UserRole  # noqa: F401

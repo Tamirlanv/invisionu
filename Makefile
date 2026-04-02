@@ -7,7 +7,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-frontend install-api infra frontend backend worker migrate init-db seed docker-up docker-down smoke smoke-services test-integration test-e2e check-invariants
+.PHONY: help install install-frontend install-api infra frontend backend worker dev migrate init-db seed docker-up docker-down smoke smoke-services test-integration test-e2e check-invariants
 
 help:
 	@echo "inVision U — commands"
@@ -19,7 +19,8 @@ help:
 	@echo "  make infra            - docker compose: postgres + redis (detached)"
 	@echo "  make frontend         - Next.js dev (port 3000)"
 	@echo "  make backend          - FastAPI + auto-start validation services + migrations/seed"
-	@echo "  make worker           - Redis job worker (scaffold)"
+	@echo "  make worker           - Redis job worker (admission_jobs queue)"
+	@echo "  make dev              - start backend + worker + frontend together (3 panes)"
 	@echo ""
 	@echo "  make migrate          - alembic upgrade head"
 	@echo "  make init-db          - create POSTGRES_USER / POSTGRES_DB on local Postgres (if role missing)"
@@ -55,6 +56,21 @@ backend:
 
 worker:
 	@bash scripts/worker.sh
+
+dev:
+	@if command -v tmux >/dev/null 2>&1; then \
+		SESSION="invision-dev"; \
+		tmux new-session -d -s $$SESSION -n backend "bash scripts/backend.sh" 2>/dev/null || true; \
+		tmux new-window -t $$SESSION -n worker "bash scripts/worker.sh"; \
+		tmux new-window -t $$SESSION -n frontend "bash scripts/frontend.sh"; \
+		tmux select-window -t $$SESSION:backend; \
+		echo "Started 3 tmux windows in session '$$SESSION'. Attach with: tmux attach -t $$SESSION"; \
+	else \
+		echo "tmux not found — start these in separate terminals:"; \
+		echo "  make backend"; \
+		echo "  make worker"; \
+		echo "  make frontend"; \
+	fi
 
 migrate:
 	@bash scripts/migrate.sh

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
 import type { CommissionBoardApplicationCard } from "@/lib/commission/types";
@@ -19,25 +18,20 @@ function borderByState(v: CommissionBoardApplicationCard["visualState"]): string
   if (v === "positive") return "2px solid #98da00";
   if (v === "negative") return "2px solid #ef4444";
   if (v === "attention") return "2px solid #f59e0b";
-  return "1px solid #f1f1f1";
+  return "none";
 }
 
-export function ApplicationCard({ card, permissions, isMoving, onQuickComment, onToggleAttention }: Props) {
-  const [comment, setComment] = useState("");
-  const [pending, setPending] = useState(false);
+function formatDate(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}.${mm}.${yy}`;
+}
 
-  async function submitComment() {
-    const text = comment.trim();
-    if (!text) return;
-    setPending(true);
-    try {
-      await onQuickComment(card.applicationId, text);
-      setComment("");
-    } finally {
-      setPending(false);
-    }
-  }
-
+export function ApplicationCard({ card, permissions, isMoving }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: card.applicationId,
     disabled: !permissions.canMove || isMoving,
@@ -50,63 +44,66 @@ export function ApplicationCard({ card, permissions, isMoving, onQuickComment, o
       {...attributes}
       {...listeners}
       style={{
+        width: 278,
+        height: 88,
         border: borderByState(card.visualState),
         borderRadius: 16,
-        padding: "16px 18px",
         background: "#fff",
         opacity: isMoving ? 0.6 : 1,
-        display: "grid",
-        gap: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: "16px 24px",
+        boxSizing: "border-box",
         transform: CSS.Transform.toString(transform),
         transition,
+        cursor: permissions.canMove ? "grab" : "default",
+        overflow: "hidden",
       }}
     >
-      <div style={{ display: "grid", gap: 6 }}>
-        <Link href={`/commission/applications/${card.applicationId}`} style={{ color: "#262626", fontWeight: 550, fontSize: 16 }}>
-          {card.candidateFullName || "Кандидат"}
-        </Link>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14, color: "#626262" }}>
-          <div>
-            <p style={{ margin: 0 }}>{card.program || "—"}</p>
-            <p style={{ margin: "4px 0 0" }}>{card.age ?? "—"} лет</p>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ margin: 0 }}>{card.submittedAt ? new Date(card.submittedAt).toLocaleDateString("ru-RU") : "—"}</p>
-            <p style={{ margin: "4px 0 0" }}>{card.city || "—"}</p>
-          </div>
+      {/* Name */}
+      <Link
+        href={`/commission/applications/${card.applicationId}`}
+        style={{
+          fontSize: 16,
+          fontWeight: 450,
+          color: "#262626",
+          letterSpacing: "-0.48px",
+          lineHeight: "16px",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          textDecoration: "none",
+        }}
+      >
+        {card.candidateFullName || "Кандидат"}
+      </Link>
+
+      {/* Meta row */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          fontSize: 14,
+          fontWeight: 350,
+          color: "#626262",
+          letterSpacing: "-0.42px",
+          lineHeight: "14px",
+        }}
+      >
+        {/* Left: program + age */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {card.program ? <span>{card.program}</span> : null}
+          {card.age != null ? <span>{card.age} лет</span> : null}
+        </div>
+
+        {/* Right: date + city */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+          <span>{formatDate(card.submittedAt)}</span>
+          {card.city ? <span>{card.city}</span> : null}
         </div>
       </div>
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span className="muted" style={{ fontSize: 13 }}>
-          Комментарии: {card.commentCount}
-        </span>
-        {permissions.canSetAttention ? (
-          <button
-            className="btn secondary"
-            type="button"
-            onClick={() => void onToggleAttention(card.applicationId, !card.manualAttentionFlag)}
-            style={{ padding: "6px 10px", fontSize: 12 }}
-          >
-            {card.manualAttentionFlag ? "Снять attention" : "Attention"}
-          </button>
-        ) : null}
-      </div>
-
-      {permissions.canComment ? (
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            className="input"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Быстрый комментарий"
-          />
-          <button className="btn secondary" type="button" onClick={() => void submitComment()} disabled={pending}>
-            {pending ? "..." : "OK"}
-          </button>
-        </div>
-      ) : null}
     </article>
   );
 }
-

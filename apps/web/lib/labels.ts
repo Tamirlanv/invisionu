@@ -3,7 +3,7 @@
 export function applicationStageRu(code: string): string {
   const m: Record<string, string> = {
     application: "Подача заявления",
-    initial_screening: "Первичный отбор",
+    initial_screening: "Проверка данных",
     application_review: "Рассмотрение заявления",
     interview: "Собеседование",
     committee_review: "Решение комиссии",
@@ -17,7 +17,7 @@ export function applicationStateRu(code: string): string {
     draft: "Черновик",
     in_progress: "В процессе заполнения",
     submitted: "Подана",
-    under_screening: "Первичный отбор",
+    under_screening: "Проверка данных",
     under_review: "На рассмотрении",
     interview_pending: "Ожидается собеседование",
     interview_completed: "Собеседование пройдено",
@@ -41,10 +41,13 @@ export function missingItemRu(key: string): string {
 
 export function sectionKeyRu(key: string): string {
   const m: Record<string, string> = {
-    personal: "Личные данные",
+    personal: "Личная информация",
     contact: "Контакты",
     education: "Образование",
     internal_test: "Тест",
+    motivation_goals: "Мотивация",
+    growth_journey: "Путь",
+    achievements_activities: "Достижения",
     social_status_cert: "Справка о социальном статусе",
   };
   return m[key] ?? key;

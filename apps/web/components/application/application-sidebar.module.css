@@ -115,20 +115,7 @@
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   min-width: 0;
-}
-
-.stepsRow {
-  display: inline-grid;
-  grid-template-columns: max-content;
-  grid-template-rows: max-content;
-  justify-items: start;
-  align-items: start;
-  width: 100%;
-  max-width: 100%;
 }
 
 .stepsListContainer {
@@ -136,8 +123,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 20px;
-  width: 166px;
-  max-width: 100%;
+  width: 100%;
 }
 
 .stepsTitleRow {
@@ -157,49 +143,20 @@
   white-space: nowrap;
 }
 
-/* Step List: gap 32 между активным пунктом и списком остальных */
+/* Step List: uniform gap between all stage rows */
 .stepList {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
-  gap: 32px;
+  gap: 16px;
   width: 100%;
-  align-self: stretch;
 }
 
-.lowerSteps {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  align-self: stretch;
-}
-
-/* Пунктир в зазоре 32px между активным этапом и StepItemList */
-.connectorOverlay {
-  position: absolute;
-  left: 7px;
-  top: -32px;
-  height: 32px;
-  width: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.connectorRotate {
-  flex: none;
-  transform: rotate(90deg);
-  width: 20px;
-  height: 4px;
-}
-
-.connectorSvg {
-  display: block;
-  width: 20px;
-  height: 4px;
+/* Dotted connector rendered inline after the current active stage */
+.stageConnector {
+  margin-left: 5px;
+  padding: 2px 0;
+  line-height: 0;
 }
 
 .stepItemList {

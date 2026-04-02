@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from invision_api.api.deps import require_commission_role
 from invision_api.commission.application import service as commission_service
+from invision_api.commission.application import personal_info_service as commission_personal_info_service
 from invision_api.commission.domain.types import (
     CommissionRole,
     FinalDecision,
@@ -81,6 +82,28 @@ def get_application(
     return commission_service.get_application_details(db, application_id)
 
 
+@router.get("/applications/{application_id}/personal-info")
+def get_application_personal_info(
+    application_id: UUID,
+    user: User = Depends(require_commission_role(CommissionRole.viewer)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return commission_personal_info_service.get_commission_application_personal_info(
+        db, application_id=application_id, actor=user
+    )
+
+
+@router.get("/applications/{application_id}/test-info")
+def get_application_test_info(
+    application_id: UUID,
+    _: User = Depends(require_commission_role(CommissionRole.viewer)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return commission_personal_info_service.get_commission_application_test_info(
+        db, application_id=application_id
+    )
+
+
 class StageAdvanceBody(BaseModel):
     reason_comment: str | None = None
 
@@ -92,7 +115,12 @@ def stage_advance(
     user: User = Depends(require_commission_role(CommissionRole.reviewer)),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    out = commission_service.advance_stage(db, application_id, user.id, body.reason_comment)
+    out = commission_personal_info_service.move_application_to_next_stage(
+        db,
+        application_id=application_id,
+        actor_user_id=user.id,
+        reason_comment=body.reason_comment,
+    )
     db.commit()
     return out
 
@@ -154,7 +182,12 @@ def create_comment(
     user: User = Depends(require_commission_role(CommissionRole.reviewer)),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    out = commission_service.add_comment(db, application_id=application_id, actor_user_id=user.id, body=body.body)
+    out = commission_personal_info_service.create_commission_comment(
+        db,
+        application_id=application_id,
+        actor_user_id=user.id,
+        text=body.body,
+    )
     db.commit()
     return out
 
@@ -302,6 +335,24 @@ def post_ai_summary_run(
     )
     db.commit()
     return {"status": out.status, "detail": out.detail, "inputHash": out.input_hash}
+
+
+@router.delete("/applications/{application_id}")
+def delete_application(
+    application_id: UUID,
+    _: User = Depends(require_commission_role(CommissionRole.admin)),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Hard-delete an application (admin / testing only). All related rows cascade."""
+    from invision_api.models.application import Application
+    from fastapi import HTTPException
+
+    app = db.get(Application, application_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    db.delete(app)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/updates")

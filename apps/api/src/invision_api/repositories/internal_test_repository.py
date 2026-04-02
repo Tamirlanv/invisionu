@@ -38,6 +38,27 @@ def get_answer(db: Session, application_id: UUID, question_id: UUID) -> Internal
     ).first()
 
 
+def list_answers_for_application(db: Session, application_id: UUID) -> list[InternalTestAnswer]:
+    return list(
+        db.scalars(
+            select(InternalTestAnswer).where(
+                InternalTestAnswer.application_id == application_id,
+            )
+        ).all()
+    )
+
+
+def count_answered_answers_for_application(db: Session, application_id: UUID) -> int:
+    rows = list_answers_for_application(db, application_id)
+    count = 0
+    for row in rows:
+        has_text = bool((row.text_answer or "").strip())
+        has_choice = bool(row.selected_options and len(row.selected_options) > 0)
+        if has_text or has_choice:
+            count += 1
+    return count
+
+
 def count_finalized_answers_for_application(db: Session, application_id: UUID) -> int:
     return int(
         db.scalar(
