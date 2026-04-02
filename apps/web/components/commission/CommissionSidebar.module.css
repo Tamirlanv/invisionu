@@ -23,6 +23,8 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .header {
@@ -144,6 +146,37 @@
 }
 
 .collapsed .item {
+  justify-content: center;
+  padding: 10px 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.logoutBtn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #e53935;
+  font-size: 14px;
+  text-align: left;
+}
+
+.logoutBtn:hover {
+  background: #fef2f2;
+}
+
+.collapsed .logoutBtn .itemLabel {
+  display: none;
+}
+
+.collapsed .logoutBtn {
   justify-content: center;
   padding: 10px 8px;
 }

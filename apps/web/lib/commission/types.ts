@@ -274,3 +274,14 @@ export type CommissionApplicationTestInfoView = {
   } | null;
 };
 
+export type SidebarSection = {
+  title: string;
+  items: string[];
+};
+
+export type CommissionSidebarPanelView = {
+  type: "validation" | "summary";
+  title: string;
+  sections: SidebarSection[];
+};
+

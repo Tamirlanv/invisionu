@@ -15,8 +15,14 @@ import {
   getCommissionApplicationPersonalInfo,
   getCommissionApplicationTestInfo,
   getCommissionRole,
+  getCommissionSidebarPanel,
 } from "@/lib/commission/query";
-import type { CommissionApplicationPersonalInfoView, CommissionApplicationTestInfoView, CommissionRole } from "@/lib/commission/types";
+import type {
+  CommissionApplicationPersonalInfoView,
+  CommissionApplicationTestInfoView,
+  CommissionSidebarPanelView,
+  CommissionRole,
+} from "@/lib/commission/types";
 import styles from "./page.module.css";
 
 type LoadError = { status: number | null; message: string };
@@ -34,6 +40,11 @@ function formatSubmittedDate(raw: string): string {
 function ProcessingBanner({ data }: { data: CommissionApplicationPersonalInfoView }) {
   const ps = data.processingStatus;
   if (!ps || ps.overall === "ready") return null;
+
+  const stage = data.stageContext?.currentStage;
+  if (stage && stage !== "initial_screening" && stage !== "data_check") {
+    if (ps.overall === "partial") return null;
+  }
 
   const isError = ps.overall === "failed" || ps.manualReviewRequired;
   const label =
@@ -87,6 +98,10 @@ export default function CommissionApplicationDetailPage() {
   const [testLoading, setTestLoading] = useState(false);
   const testFetchedRef = useRef(false);
 
+  const [sidebarPanel, setSidebarPanel] = useState<CommissionSidebarPanelView | null>(null);
+  const [sidebarLoading, setSidebarLoading] = useState(false);
+  const lastSidebarTabRef = useRef<string>("");
+
   async function handleDelete() {
     if (!applicationId || deleteRef.current) return;
     if (!confirm("Удалить заявку? Это действие необратимо.")) return;
@@ -138,6 +153,24 @@ export default function CommissionApplicationDetailPage() {
       cancelled = true;
     };
   }, [applicationId]);
+
+  useEffect(() => {
+    if (!applicationId || lastSidebarTabRef.current === activeTab) return;
+    lastSidebarTabRef.current = activeTab;
+    let cancelled = false;
+    setSidebarLoading(true);
+    getCommissionSidebarPanel(applicationId!, activeTab)
+      .then((panel) => {
+        if (!cancelled) setSidebarPanel(panel);
+      })
+      .catch(() => {
+        if (!cancelled) setSidebarPanel(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSidebarLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, applicationId]);
 
   useEffect(() => {
     if (activeTab !== "Тест" || !applicationId || testFetchedRef.current) return;
@@ -202,33 +235,9 @@ export default function CommissionApplicationDetailPage() {
     <main className={styles.root}>
       <div className={styles.header}>
         <h1 className={styles.pageTitle}>Страница ученика</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {permissions.canMove ? (
-            <button
-              type="button"
-              onClick={() => void handleDelete()}
-              disabled={deleting}
-              style={{
-                fontSize: 16,
-                fontWeight: 350,
-                color: "#e53935",
-                background: "none",
-                border: "none",
-                cursor: deleting ? "not-allowed" : "pointer",
-                padding: 0,
-                opacity: deleting ? 0.5 : 1,
-              }}
-            >
-              {deleting ? "Удаление..." : "Удалить"}
-            </button>
-          ) : null}
-          {deleteError ? (
-            <span style={{ fontSize: 13, color: "#e53935" }}>{deleteError}</span>
-          ) : null}
-          <Link href="/commission" style={{ fontSize: 14, color: "#626262", textDecoration: "none" }}>
-            ← К доске
-          </Link>
-        </div>
+        <Link href="/commission" style={{ fontSize: 14, color: "#626262", textDecoration: "none" }}>
+          ← К доске
+        </Link>
       </div>
 
       <div className={styles.layout}>
@@ -259,64 +268,27 @@ export default function CommissionApplicationDetailPage() {
             </div>
           </section>
 
-          {/* Card 2: AI Summary — swaps based on active tab */}
+          {/* Card 2: Sidebar panel — swaps based on active tab */}
           <section className={styles.sideCard}>
-            <h3 className={styles.aiTitle}>Summary</h3>
-            {activeTab === "Тест" ? (
-              testData?.aiSummary ? (
-                <>
-                  {testData.personalityProfile?.profileTitle ? (
-                    <div className={styles.aiRow}>
-                      <p className={styles.aiLabel}>Тип личности</p>
-                      <p className={styles.aiLabel}>{testData.personalityProfile.profileTitle}</p>
-                    </div>
-                  ) : null}
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <p className={styles.aiLabel}>О кандидате</p>
-                    <p className={styles.aiText}>{testData.aiSummary.aboutCandidate ?? "—"}</p>
+            <h3 className={styles.aiTitle}>
+              {sidebarPanel?.title ?? "Summary"}
+            </h3>
+            {sidebarLoading ? (
+              <p className={styles.aiText}>Загрузка...</p>
+            ) : sidebarPanel ? (
+              <div style={{ display: "grid", gap: 16 }}>
+                {sidebarPanel.sections.map((section) => (
+                  <div key={section.title} style={{ display: "grid", gap: 4 }}>
+                    <p className={styles.aiLabel}>{section.title}</p>
+                    {section.items.map((item, i) => (
+                      <p key={i} className={styles.aiText}>{item}</p>
+                    ))}
                   </div>
-                  {testData.aiSummary.weakPoints.length > 0 ? (
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <p className={styles.aiLabel}>Слабые места</p>
-                      <p className={styles.aiText}>{testData.aiSummary.weakPoints.join(", ")}</p>
-                    </div>
-                  ) : null}
-                </>
-              ) : testLoading ? (
-                <p className={styles.aiText}>Формируется...</p>
-              ) : testData?.personalityProfile ? (
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div className={styles.aiRow}>
-                    <p className={styles.aiLabel}>Тип личности</p>
-                    <p className={styles.aiLabel}>{testData.personalityProfile.profileTitle}</p>
-                  </div>
-                  <p className={styles.aiText}>{testData.personalityProfile.summary ?? "—"}</p>
-                </div>
-              ) : (
-                <p className={styles.aiText}>Сводка теста пока отсутствует.</p>
-              )
-            ) : data.aiSummary ? (
-              <>
-                {data.aiSummary.profileTitle ? (
-                  <div className={styles.aiRow}>
-                    <p className={styles.aiLabel}>Тест</p>
-                    <p className={styles.aiLabel}>{data.aiSummary.profileTitle}</p>
-                  </div>
-                ) : null}
-                <div style={{ display: "grid", gap: 4 }}>
-                  <p className={styles.aiLabel}>О кандидате</p>
-                  <p className={styles.aiText}>{data.aiSummary.summaryText ?? "—"}</p>
-                </div>
-                {data.aiSummary.weakPoints.length > 0 ? (
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <p className={styles.aiLabel}>Слабые места</p>
-                    <p className={styles.aiText}>{data.aiSummary.weakPoints.join(", ")}</p>
-                  </div>
-                ) : null}
-              </>
+                ))}
+              </div>
             ) : (
               <p className={styles.aiText}>
-                {processingInProgress ? "Формируется..." : "Сводка пока отсутствует."}
+                {processingInProgress ? "Формируется..." : "Данные недоступны."}
               </p>
             )}
           </section>
@@ -356,6 +328,31 @@ export default function CommissionApplicationDetailPage() {
               <p style={{ color: "#626262", fontSize: 14 }}>Данные теста недоступны.</p>
             )
           )}
+
+          {permissions.canMove ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 32 }}>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={deleting}
+                style={{
+                  fontSize: 14,
+                  fontWeight: 350,
+                  color: "#e53935",
+                  background: "none",
+                  border: "none",
+                  cursor: deleting ? "not-allowed" : "pointer",
+                  padding: 0,
+                  opacity: deleting ? 0.5 : 1,
+                }}
+              >
+                {deleting ? "Удаление..." : "Удалить"}
+              </button>
+              {deleteError ? (
+                <span style={{ fontSize: 13, color: "#e53935" }}>{deleteError}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </main>

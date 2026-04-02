@@ -66,7 +66,9 @@ def upsert_projection_for_application(db: Session, app: Application) -> Applicat
 
     row.city = contact_payload.get("city") or personal_payload.get("city") or None
     row.phone = contact_payload.get("phone_e164") or None
-    row.program = education_payload.get("certificate_proof_kind") or None
+    raw_program = personal_payload.get("education_program") or None
+    _PROGRAM_LABELS = {"foundation": "Foundation", "bachelor": "Бакалавриат"}
+    row.program = _PROGRAM_LABELS.get(raw_program, raw_program) if raw_program else None
 
     dob_raw = personal_payload.get("date_of_birth")
     if dob_raw:

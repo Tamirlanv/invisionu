@@ -16,6 +16,7 @@ import { SelectField } from "@/components/application/SelectField";
 import { FileUploadField, type UploadedFileDisplay } from "@/components/application/FileUploadField";
 import { ConsentCheckbox } from "@/components/application/ConsentCheckbox";
 import { saveDraft as saveDraftLocal, loadDraft, clearDraft } from "@/lib/draft-storage";
+import { readRegisterFlow } from "@/lib/register-flow";
 import formStyles from "@/components/application/form-ui.module.css";
 
 const personalFormSchema = personalSchema.extend({
@@ -73,6 +74,7 @@ export default function PersonalPage() {
   const [identityFileMeta, setIdentityFileMeta] = useState<UploadedFileDisplay | null>(null);
   const [identityUploading, setIdentityUploading] = useState(false);
   const [pageMsg, setPageMsg] = useState<string | null>(null);
+  const [educationProgram, setEducationProgram] = useState<string | null>(null);
 
   const {
     register,
@@ -213,6 +215,10 @@ export default function PersonalPage() {
               identity_document_id: raw.identity_document_id != null ? String(raw.identity_document_id) : undefined,
             }
           : {};
+        const savedProgram = raw?.education_program ? String(raw.education_program) : null;
+        const flow = readRegisterFlow();
+        setEducationProgram(savedProgram || flow?.program || null);
+
         const local = loadDraft<PersonalForm>("personal");
         const merged = { ...FORM_DEFAULTS, ...apiValues, ...local } as PersonalForm;
         reset(merged);
@@ -241,6 +247,7 @@ export default function PersonalPage() {
       preferred_last_name: data.preferred_last_name,
       middle_name: data.middle_name || undefined,
       date_of_birth: data.date_of_birth || undefined,
+      education_program: educationProgram || undefined,
       document_type: data.document_type || undefined,
       citizenship: data.citizenship || undefined,
       iin: data.iin || undefined,

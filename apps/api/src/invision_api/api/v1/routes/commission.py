@@ -104,6 +104,18 @@ def get_application_test_info(
     )
 
 
+@router.get("/applications/{application_id}/sidebar")
+def get_application_sidebar(
+    application_id: UUID,
+    tab: str = "personal",
+    _: User = Depends(require_commission_role(CommissionRole.viewer)),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from invision_api.commission.application import sidebar_service
+
+    return sidebar_service.get_sidebar_panel(db, application_id=application_id, tab=tab)
+
+
 class StageAdvanceBody(BaseModel):
     reason_comment: str | None = None
 

@@ -10,6 +10,7 @@ import type {
   CommissionApplicationDetailView,
   CommissionApplicationPersonalInfoView,
   CommissionApplicationTestInfoView,
+  CommissionSidebarPanelView,
   CommissionRange,
   CommissionRole,
   CommissionStage,
@@ -228,5 +229,23 @@ export async function getCommissionApplicationTestInfo(
 
 export async function createCommissionComment(applicationId: string, body: string): Promise<void> {
   await createApplicationComment(applicationId, body);
+}
+
+const _TAB_TO_QUERY: Record<string, string> = {
+  "Личная информация": "personal",
+  "Тест": "test",
+  "Мотивация": "motivation",
+  "Путь": "path",
+  "Достижения": "achievements",
+};
+
+export async function getCommissionSidebarPanel(
+  applicationId: string,
+  tab: string,
+): Promise<CommissionSidebarPanelView> {
+  const queryTab = _TAB_TO_QUERY[tab] ?? "personal";
+  return await apiFetch<CommissionSidebarPanelView>(
+    `/commission/applications/${applicationId}/sidebar?tab=${encodeURIComponent(queryTab)}`,
+  );
 }
 

@@ -45,6 +45,7 @@ class PersonalSectionPayload(BaseModel):
     preferred_last_name: str = Field(min_length=1, max_length=128)
     middle_name: str | None = Field(default=None, max_length=128)
     date_of_birth: date | None = None
+    education_program: str | None = Field(default=None, max_length=64)
     document_type: str | None = Field(default=None, max_length=32)
     citizenship: str | None = Field(default=None, max_length=128)
     iin: str | None = Field(default=None, max_length=32)

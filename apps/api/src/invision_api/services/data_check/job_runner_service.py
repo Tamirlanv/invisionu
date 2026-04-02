@@ -70,16 +70,25 @@ def _try_auto_advance(
     (only optional units failed/need-review).  ``failed`` (required units broken) stays
     on initial_screening for manual commission intervention.
     """
-    if not app or getattr(app, "current_stage", None) != ApplicationStage.initial_screening.value:
+    run_status = getattr(run_computed, "status", None)
+    app_stage = getattr(app, "current_stage", None) if app else None
+
+    if not app:
+        logger.warning("auto_advance_skip application=%s reason=app_is_none", application_id)
         return
-    if getattr(run_computed, "status", None) not in _ADVANCE_STATUSES:
+    if app_stage != ApplicationStage.initial_screening.value:
+        logger.info("auto_advance_skip application=%s reason=wrong_stage stage=%s", application_id, app_stage)
+        return
+    if run_status not in _ADVANCE_STATUSES:
+        logger.info("auto_advance_skip application=%s reason=status_not_ready run_status=%s", application_id, run_status)
         return
 
     note = (
         "Auto-advanced: all data-check units completed."
-        if run_computed.status == DataCheckRunStatus.ready.value
+        if run_status == DataCheckRunStatus.ready.value
         else "Auto-advanced: required units completed; optional units need attention."
     )
+    logger.info("auto_advance_firing application=%s run_status=%s", application_id, run_status)
     try:
         apply_transition(
             db,
@@ -93,7 +102,7 @@ def _try_auto_advance(
             ),
         )
         commission_repository.upsert_projection_for_application(db, app)
-        logger.info("auto_advance application=%s initial_screening -> application_review status=%s", application_id, run_computed.status)
+        logger.info("auto_advance_ok application=%s initial_screening -> application_review", application_id)
     except Exception:
         logger.exception("auto_advance_failed application=%s", application_id)
 
@@ -255,6 +264,13 @@ def run_unit(
     if app:
         commission_repository.upsert_projection_for_application(db, app)
 
+    logger.info(
+        "run_unit_completed unit=%s application=%s computed_status=%s app_stage=%s",
+        unit_type.value,
+        application_id,
+        run_computed.status,
+        getattr(app, "current_stage", None) if app else "no_app",
+    )
     _try_auto_advance(db, run_computed=run_computed, app=app, application_id=application_id)
 
     try:
