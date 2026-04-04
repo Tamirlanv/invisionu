@@ -28,8 +28,6 @@ def process_payload(payload: dict[str, Any]) -> None:
             text_extraction_service.extract_and_persist_for_document(db, doc_id)
             db.commit()
         elif job_type == JobType.initial_screening.value:
-            from invision_api.repositories import admissions_repository
-
             app = admissions_repository.get_application_by_id(db, app_id)
             if app:
                 initial_screening_service.run_screening_checks_and_record(db, app, actor_user_id=None)
