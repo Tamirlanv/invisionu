@@ -13,6 +13,12 @@ _EXPECTED_INTERNAL_TEST_QUESTIONS = 40
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     log = logging.getLogger("uvicorn.error")
+    settings = get_settings()
+    log.info("API resolved UPLOAD_ROOT=%s", settings.upload_root)
+    log.info(
+        "API storage-proxy endpoint %s",
+        "enabled" if settings.internal_storage_proxy_secret else "disabled",
+    )
     try:
         from invision_api.db.session import SessionLocal
         from invision_api.repositories import internal_test_repository
@@ -37,7 +43,7 @@ async def _lifespan(_app: FastAPI):
 
         db = SessionLocal()
         try:
-            ensure_commission_user_from_env(db, get_settings())
+            ensure_commission_user_from_env(db, settings)
         finally:
             db.close()
     except Exception as exc:  # noqa: BLE001 — startup must not crash if DB unreachable briefly

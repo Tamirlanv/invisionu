@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from invision_api.models.application import Application
+from invision_api.models.enums import ApplicationStage, ExtractionStatus, RoleName, ScreeningResult, SectionKey
 from invision_api.models.user import Role, User, UserRole
-from invision_api.models.enums import ApplicationStage, RoleName, ScreeningResult, SectionKey
 from invision_api.repositories import admissions_repository, document_repository
 from invision_api.services import application_service, job_dispatcher_service, text_extraction_service
 from invision_api.services.stage_transition_policy import TransitionContext, TransitionName, apply_transition
@@ -62,7 +62,24 @@ def run_extractions_for_application(db: Session, application_id: UUID) -> list[U
     docs = document_repository.list_documents_for_application(db, application_id)
     out: list[UUID] = []
     for d in docs:
-        text_extraction_service.extract_and_persist_for_document(db, d.id)
+        try:
+            text_extraction_service.extract_and_persist_for_document(db, d.id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "initial_screening_extraction_failed application_id=%s document_id=%s",
+                application_id,
+                d.id,
+            )
+            ext = admissions_repository.create_document_extraction(
+                db,
+                d.id,
+                sha256_hex=(d.sha256_hex or ("0" * 64)),
+                extracted_text=None,
+                extraction_status=ExtractionStatus.failed.value,
+                extractor_version=text_extraction_service.EXTRACTOR_VERSION,
+                error_message=f"Extraction failed: {exc}",
+            )
+            admissions_repository.set_document_primary_extraction(db, d.id, ext.id)
         out.append(d.id)
     return out
 

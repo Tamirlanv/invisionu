@@ -43,6 +43,34 @@ class Settings(BaseSettings):
         ),
     )
     max_upload_bytes_default: int = 10 * 1024 * 1024
+    storage_read_mode: Literal["local_only", "local_then_proxy"] = Field(
+        default="local_only",
+        validation_alias=AliasChoices("STORAGE_READ_MODE"),
+        description=(
+            "Storage read strategy. local_only: read only local UPLOAD_ROOT. "
+            "local_then_proxy: on local miss, fetch bytes via internal API storage-proxy endpoint."
+        ),
+    )
+    storage_proxy_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("STORAGE_PROXY_BASE_URL"),
+        description="Base URL for API storage-proxy endpoint used by workers in local_then_proxy mode.",
+    )
+    storage_proxy_shared_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("STORAGE_PROXY_SHARED_SECRET"),
+        description="Shared secret sent by worker as X-Storage-Proxy-Secret to API storage-proxy endpoint.",
+    )
+    storage_proxy_timeout_seconds: float = Field(
+        default=15.0,
+        validation_alias=AliasChoices("STORAGE_PROXY_TIMEOUT_SECONDS"),
+        description="HTTP timeout for storage-proxy fetch requests.",
+    )
+    internal_storage_proxy_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("INTERNAL_STORAGE_PROXY_SECRET"),
+        description="API-side shared secret required for /internal/processing/storage/* endpoints.",
+    )
 
     resend_api_key: str | None = None
     email_from: str = "noreply@oku.com.kz"
@@ -119,6 +147,11 @@ class Settings(BaseSettings):
         if p.is_absolute():
             return str(p.resolve())
         return str((_REPO_ROOT / p).resolve())
+
+    @field_validator("storage_read_mode", mode="before")
+    @classmethod
+    def normalize_storage_read_mode(cls, v: str) -> str:
+        return str(v).strip().lower()
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

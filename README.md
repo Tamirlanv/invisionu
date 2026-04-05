@@ -128,6 +128,9 @@ Set environment variables in **`.env` at the repository root** (and/or in the ho
 | `INTERNAL_LLM_SUMMARY_URL` / `INTERNAL_LLM_API_KEY` | Data-check HTTP summarizer → same **self-hosted LLM** (hoster.kz) |
 | Other LLM-related env vars in API | Same deployment: endpoint, credential, model id for growth-path / commission / analysis paths |
 | `UPLOAD_ROOT` | Upload directory for API |
+| `STORAGE_READ_MODE` | `local_only` (default) or `local_then_proxy` for worker local-miss fallback |
+| `STORAGE_PROXY_BASE_URL` / `STORAGE_PROXY_SHARED_SECRET` / `STORAGE_PROXY_TIMEOUT_SECONDS` | Worker-side storage-proxy settings (used in `local_then_proxy`) |
+| `INTERNAL_STORAGE_PROXY_SECRET` | API-side secret for internal storage-proxy endpoint (`/api/v1/internal/processing/storage/...`) |
 | `ENVIRONMENT` | `local` (default), `staging`, or `production` — affects commission bootstrap defaults (see below) |
 | `COMMISSION_SEED_EMAIL`, `COMMISSION_ADMIN_EMAIL`, or `COMMISSION_LOGIN` | Email for the initial commission / committee login user |
 | `COMMISSION_SEED_PASSWORD`, `COMMISSION_ADMIN_PASSWORD`, or `COMMISSION_PASSWORD` | Password for that user (in **production**, both email and password must be set for bootstrap to run; no dev defaults) |

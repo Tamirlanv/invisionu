@@ -141,6 +141,11 @@ def main() -> None:
     try:
         upload_root = settings.upload_root
         logger.info("Worker resolved UPLOAD_ROOT=%s (must match API for file-based units)", upload_root)
+        logger.info(
+            "Worker storage read mode=%s proxy_base=%s",
+            settings.storage_read_mode,
+            settings.storage_proxy_base_url or "-",
+        )
     except Exception:
         logger.warning("Worker could not log UPLOAD_ROOT", exc_info=True)
     try:

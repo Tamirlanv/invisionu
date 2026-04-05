@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,9 +13,10 @@ from sqlalchemy.orm import Session
 from invision_api.models.application import Document
 from invision_api.models.enums import ExtractionStatus
 from invision_api.repositories import admissions_repository
-from invision_api.services.storage import get_storage
+from invision_api.services.storage_read_service import read_document_bytes_with_fallback
 
 EXTRACTOR_VERSION = "1.0.0"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -78,8 +80,29 @@ def extract_and_persist_for_document(db: Session, document_id: UUID) -> Document
     if not doc:
         raise ValueError("document not found")
 
-    storage = get_storage()
-    raw = storage.read_bytes(doc.storage_key)
+    try:
+        raw = read_document_bytes_with_fallback(document_id=doc.id, storage_key=doc.storage_key)
+    except OSError as exc:
+        logger.warning(
+            "document_extraction_storage_read_failed document_id=%s storage_key=%s error=%s",
+            doc.id,
+            doc.storage_key,
+            str(exc)[:300],
+        )
+        ext = admissions_repository.create_document_extraction(
+            db,
+            document_id,
+            sha256_hex=(doc.sha256_hex or ("0" * 64)),
+            extracted_text=None,
+            extraction_status=ExtractionStatus.failed.value,
+            extractor_version=EXTRACTOR_VERSION,
+            error_message=f"Storage read failed: {exc}",
+        )
+        doc.primary_extraction_id = ext.id
+        db.flush()
+        db.refresh(doc)
+        return doc
+
     sha = hashlib.sha256(raw).hexdigest()
     if not doc.sha256_hex:
         doc.sha256_hex = sha

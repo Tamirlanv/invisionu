@@ -12,7 +12,7 @@ from invision_api.models.certificate_validation import CertificateValidationResu
 from invision_api.models.enums import SectionKey
 from invision_api.services.data_check.contracts import UnitExecutionResult
 from invision_api.services.data_check.utils import get_validated_section
-from invision_api.services.storage import get_storage
+from invision_api.services.storage_read_service import read_document_bytes_with_fallback
 from invision_api.services.text_extraction_service import extract_bytes
 
 CERTIFICATE_VALIDATION_URL = os.getenv(
@@ -159,7 +159,6 @@ def run_certificate_validation_processing(
             manual_review_required=True,
         )
 
-    storage = get_storage()
     rows: list[CertificateValidationResultRow] = []
     warnings: list[str] = []
     explainability: list[str] = []
@@ -180,7 +179,7 @@ def run_certificate_validation_processing(
         )
 
         try:
-            raw = storage.read_bytes(doc.storage_key)
+            raw = read_document_bytes_with_fallback(document_id=doc.id, storage_key=doc.storage_key)
         except OSError as e:
             row = _row_from_error(application_id, doc_id, f"Storage read failed: {e}")
             db.add(row)
