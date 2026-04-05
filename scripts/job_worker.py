@@ -146,6 +146,15 @@ def main() -> None:
             settings.storage_read_mode,
             settings.storage_proxy_base_url or "-",
         )
+        asr_base = getattr(settings, "asr_base_url", None)
+        asr_model = getattr(settings, "asr_model", None)
+        asr_key_set = bool(getattr(settings, "asr_api_key", None) or getattr(settings, "openai_api_key", None))
+        logger.info(
+            "Worker ASR config base=%s model=%s key_set=%s",
+            asr_base or "-",
+            asr_model or "-",
+            asr_key_set,
+        )
     except Exception:
         logger.warning("Worker could not log UPLOAD_ROOT", exc_info=True)
     try:

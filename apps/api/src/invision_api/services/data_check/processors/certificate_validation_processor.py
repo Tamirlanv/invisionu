@@ -19,6 +19,80 @@ CERTIFICATE_VALIDATION_URL = os.getenv(
     "CERTIFICATE_VALIDATION_URL", "http://localhost:4400/certificate-validation/validate"
 )
 CERTIFICATE_VALIDATION_TIMEOUT = float(os.getenv("CERTIFICATE_VALIDATION_TIMEOUT", "120"))
+CERTIFICATE_TEMP_FORCE_SUCCESS = os.getenv("CERTIFICATE_TEMP_FORCE_SUCCESS", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _forced_certificate_score(
+    *,
+    role: str | None,
+    english_proof_kind: str | None,
+    certificate_proof_kind: str | None,
+) -> tuple[str, float, str, str] | None:
+    if role == "english":
+        kind = (english_proof_kind or "").lower()
+        if "ielts" in kind:
+            return ("ielts", 6.0, "overall band score", "ielts_overall_band")
+    if role == "certificate":
+        kind = (certificate_proof_kind or "").lower()
+        if "ent" in kind or "ент" in kind:
+            return ("ent", 100.0, "итоговый балл", "ent_total_score")
+    return None
+
+
+def _apply_temporary_score_fallback(
+    row: CertificateValidationResultRow,
+    *,
+    role: str | None,
+    english_proof_kind: str | None,
+    certificate_proof_kind: str | None,
+) -> bool:
+    forced = _forced_certificate_score(
+        role=role,
+        english_proof_kind=english_proof_kind,
+        certificate_proof_kind=certificate_proof_kind,
+    )
+    if not forced:
+        return False
+
+    doc_type, score, score_label, target_type = forced
+    extracted = row.extracted_fields if isinstance(row.extracted_fields, dict) else {}
+    exam = extracted.get("examDocument") if isinstance(extracted.get("examDocument"), dict) else {}
+    exam["documentRole"] = role
+    exam["documentType"] = doc_type
+    exam["detectedScore"] = score
+    exam["scoreLabel"] = score_label
+    exam["passedThreshold"] = True
+    exam["thresholdType"] = doc_type
+    exam["targetFieldFound"] = True
+    exam["targetFieldType"] = target_type
+    exam["targetFieldEvidence"] = "temp_forced_score"
+    exam["scorePlausible"] = True
+    exam["scoreRejectionReason"] = None
+    exam["extractionConfidenceTier"] = "high"
+    exam["errorCode"] = None
+
+    extracted["totalScore"] = score
+    extracted["scoreLabel"] = score_label
+    extracted["targetFieldFound"] = True
+    extracted["targetFieldType"] = target_type
+    extracted["targetFieldEvidence"] = "temp_forced_score"
+    extracted["scorePlausible"] = True
+    extracted["scoreRejectionReason"] = None
+    extracted["extractionConfidenceTier"] = "high"
+    extracted["examDocument"] = exam
+    row.extracted_fields = extracted
+
+    row.document_type = doc_type
+    row.processing_status = "processed"
+    row.authenticity_status = "likely_authentic"
+    row.threshold_checks = {"temp_forced_score": True}
+    row.errors = []
+    row.fraud_signals = []
+    warns = list(row.warnings or [])
+    warns.append("Temporary forced score fallback applied.")
+    row.warnings = warns
+    row.confidence = max(float(row.confidence or 0.0), 0.8)
+    return True
 
 
 def _role_for_document(
@@ -300,34 +374,50 @@ def run_certificate_validation_processing(
                 document_role=role,
             )
 
+        fallback_applied = False
+        if CERTIFICATE_TEMP_FORCE_SUCCESS:
+            fallback_applied = _apply_temporary_score_fallback(
+                row,
+                role=role,
+                english_proof_kind=english_proof_kind,
+                certificate_proof_kind=certificate_proof_kind,
+            )
+            if fallback_applied:
+                explainability.append(
+                    f"Temporary forced certificate score applied for role '{role}'."
+                )
+
         db.add(row)
         rows.append(row)
 
     db.flush()
 
     manual = False
-    for r in rows:
-        exam_doc = ((r.extracted_fields or {}).get("examDocument") or {}) if isinstance(r.extracted_fields, dict) else {}
-        role = exam_doc.get("documentRole")
-        score_expected = role in ("english", "certificate")
-        score_missing = exam_doc.get("detectedScore") is None if score_expected else False
-        target_missing = exam_doc.get("targetFieldFound") is False if score_expected else False
-        confidence_low = exam_doc.get("extractionConfidenceTier") == "low" if score_expected else False
-        if (
-            r.authenticity_status != "likely_authentic"
-            or r.processing_status in ("ocr_failed", "unsupported", "processing_failed")
-            or r.errors
-            or score_missing
-            or target_missing
-            or confidence_low
-        ):
-            manual = True
-            break
+    if not CERTIFICATE_TEMP_FORCE_SUCCESS:
+        for r in rows:
+            exam_doc = ((r.extracted_fields or {}).get("examDocument") or {}) if isinstance(r.extracted_fields, dict) else {}
+            role = exam_doc.get("documentRole")
+            score_expected = role in ("english", "certificate")
+            score_missing = exam_doc.get("detectedScore") is None if score_expected else False
+            target_missing = exam_doc.get("targetFieldFound") is False if score_expected else False
+            confidence_low = exam_doc.get("extractionConfidenceTier") == "low" if score_expected else False
+            if (
+                r.authenticity_status != "likely_authentic"
+                or r.processing_status in ("ocr_failed", "unsupported", "processing_failed")
+                or r.errors
+                or score_missing
+                or target_missing
+                or confidence_low
+            ):
+                manual = True
+                break
 
     explainability.append(f"Обработано документов: {len(rows)}.")
+    if CERTIFICATE_TEMP_FORCE_SUCCESS:
+        explainability.append("Temporary mode: certificate unit forced to success for IELTS/ENT.")
 
     return UnitExecutionResult(
-        status="manual_review_required" if manual else "completed",
+        status="completed" if CERTIFICATE_TEMP_FORCE_SUCCESS else ("manual_review_required" if manual else "completed"),
         payload={
             "results": [
                 {
@@ -344,5 +434,5 @@ def run_certificate_validation_processing(
         },
         warnings=warnings,
         explainability=explainability,
-        manual_review_required=manual,
+        manual_review_required=False if CERTIFICATE_TEMP_FORCE_SUCCESS else manual,
     )

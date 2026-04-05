@@ -27,7 +27,10 @@ def _partial_outcome() -> VideoPipelineOutcome:
         frames_extracted_success=6,
         face_detected_frames_count=1,
         raw_transcript="Короткий пример транскрипта",
+        transcript_source="none",
         transcript_confidence=None,
+        captions_language=None,
+        text_acquisition_error_code="asr_unavailable",
         commission_summary="Текст не обнаружен",
         candidate_visible=True,
         has_speech=False,
@@ -57,7 +60,10 @@ def _asr_partial_outcome() -> VideoPipelineOutcome:
         frames_extracted_success=6,
         face_detected_frames_count=3,
         raw_transcript="",
+        transcript_source="none",
         transcript_confidence=None,
+        captions_language=None,
+        text_acquisition_error_code="asr_unavailable",
         commission_summary="Текст не обнаружен",
         candidate_visible=True,
         has_speech=False,
@@ -89,6 +95,8 @@ def test_video_validation_processor_persists_extended_payload_and_manual_state(
     assert result.payload["resourceType"] == "video"
     assert result.payload["ingestionStrategy"] == "dropbox_direct_download"
     assert result.payload["durationSec"] == 299
+    assert result.payload["transcriptSource"] == "none"
+    assert result.payload["textAcquisitionErrorCode"] == "asr_unavailable"
 
     row = (
         db.query(VideoValidationResultRow)
@@ -122,3 +130,4 @@ def test_video_validation_processor_marks_asr_partial_with_error_code(db: Sessio
     assert result.payload is not None
     assert result.payload["mediaStatus"] == "partial"
     assert result.payload["errorCode"] == "asr_unavailable"
+    assert result.payload["textAcquisitionErrorCode"] == "asr_unavailable"

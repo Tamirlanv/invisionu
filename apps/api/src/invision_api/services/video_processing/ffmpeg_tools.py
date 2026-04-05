@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -15,6 +17,13 @@ logger = logging.getLogger(__name__)
 
 class FFmpegError(RuntimeError):
     pass
+
+
+class YouTubeCaptionsError(FFmpegError):
+    def __init__(self, code: str, message: str, *, infrastructure: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.infrastructure = infrastructure
 
 
 @dataclass(frozen=True)
@@ -27,6 +36,18 @@ class MediaMetadata:
     codec_video: str | None
     codec_audio: str | None
     container: str | None
+
+
+@dataclass(frozen=True)
+class YouTubeCaptionPayload:
+    language: str
+    source: str  # manual | auto
+    text: str
+
+
+_TIMECODE_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}\s+-->\s+\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}")
+_TAG_RE = re.compile(r"<[^>]+>")
+_VTT_CUE_SETTINGS_RE = re.compile(r"\b(line|position|size|align|vertical):\S+")
 
 
 def _run(args: list[str], *, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -316,6 +337,184 @@ def _select_best_ytdlp_output(files: list[Path]) -> Path:
     if best is None or best_score <= 0:
         raise FFmpegError("yt-dlp не смог подготовить пригодный видеофайл с дорожками.")
     return best
+
+
+def _normalize_caption_text(raw: str) -> str:
+    lines = raw.splitlines()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        su = s.upper()
+        if su == "WEBVTT" or su.startswith("NOTE"):
+            continue
+        if _TIMECODE_RE.match(s):
+            continue
+        if s.isdigit():
+            continue
+        s = _VTT_CUE_SETTINGS_RE.sub("", s).strip()
+        s = _TAG_RE.sub("", s).strip()
+        s = unescape(s)
+        if not s:
+            continue
+        low = s.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        cleaned.append(s)
+    return " ".join(cleaned).strip()
+
+
+def _caption_priority(lang: str) -> int:
+    l = (lang or "").lower()
+    if l.startswith("ru"):
+        return 0
+    if l.startswith("en"):
+        return 1
+    return 2
+
+
+def _iter_caption_candidates(meta: dict[str, Any]) -> list[tuple[str, str]]:
+    subtitles = meta.get("subtitles") if isinstance(meta.get("subtitles"), dict) else {}
+    auto = meta.get("automatic_captions") if isinstance(meta.get("automatic_captions"), dict) else {}
+
+    candidates: list[tuple[int, int, str, str]] = []
+    for lang in subtitles.keys():
+        candidates.append((_caption_priority(str(lang)), 0, str(lang), "manual"))
+    for lang in auto.keys():
+        candidates.append((_caption_priority(str(lang)), 1, str(lang), "auto"))
+    if not candidates:
+        return []
+    candidates.sort(key=lambda x: (x[0], x[1], x[2]))
+    ordered: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for _, _, lang, source in candidates:
+        key = (lang, source)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(key)
+    return ordered
+
+
+def _pick_caption_track(meta: dict[str, Any]) -> tuple[str, str] | None:
+    candidates = _iter_caption_candidates(meta)
+    return candidates[0] if candidates else None
+
+
+def download_youtube_caption_payload(url: str, *, timeout_seconds: int = 300) -> YouTubeCaptionPayload:
+    ytdlp = resolve_media_runtime_binaries(include_ytdlp=True).get("yt-dlp")
+    if not ytdlp:
+        raise YouTubeCaptionsError(
+            "missing_ytdlp",
+            "Для fallback по субтитрам нужен yt-dlp в PATH.",
+            infrastructure=True,
+        )
+
+    td = tempfile.mkdtemp(prefix="ytcaps_")
+    try:
+        info_args = [
+            ytdlp,
+            "--no-playlist",
+            "--skip-download",
+            "--dump-single-json",
+            url,
+        ]
+        info = _run(info_args, timeout=timeout_seconds)
+        if info.returncode != 0:
+            stderr = (info.stderr or "").strip()
+            if "429" in stderr:
+                raise YouTubeCaptionsError(
+                    "captions_rate_limited",
+                    "YouTube временно ограничил доступ к субтитрам (429).",
+                    infrastructure=True,
+                )
+            raise YouTubeCaptionsError(
+                "captions_fetch_failed",
+                stderr or "Не удалось получить метаданные субтитров YouTube.",
+                infrastructure=True,
+            )
+        try:
+            meta = json.loads(info.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise YouTubeCaptionsError(
+                "captions_fetch_failed",
+                "Неверный формат метаданных субтитров YouTube.",
+                infrastructure=True,
+            ) from exc
+
+        candidates = _iter_caption_candidates(meta)
+        if not candidates:
+            raise YouTubeCaptionsError(
+                "captions_unavailable",
+                "У видео нет доступных субтитров.",
+                infrastructure=False,
+            )
+        last_infra_error: YouTubeCaptionsError | None = None
+        for lang, source in candidates:
+            for old in Path(td).glob("src.*"):
+                old.unlink(missing_ok=True)
+
+            pattern = str(Path(td) / "src.%(ext)s")
+            fetch_args = [
+                ytdlp,
+                "--no-playlist",
+                "--skip-download",
+                "--sub-langs",
+                lang,
+                "--sub-format",
+                "vtt",
+                "-o",
+                pattern,
+            ]
+            if source == "manual":
+                fetch_args.append("--write-sub")
+            else:
+                fetch_args.append("--write-auto-sub")
+            fetch_args.append(url)
+            fetched = _run(fetch_args, timeout=timeout_seconds)
+            if fetched.returncode != 0:
+                stderr = (fetched.stderr or "").strip()
+                if "429" in stderr:
+                    last_infra_error = YouTubeCaptionsError(
+                        "captions_rate_limited",
+                        "YouTube временно ограничил доступ к субтитрам (429).",
+                        infrastructure=True,
+                    )
+                else:
+                    last_infra_error = YouTubeCaptionsError(
+                        "captions_fetch_failed",
+                        stderr or "Не удалось скачать субтитры YouTube.",
+                        infrastructure=True,
+                    )
+                continue
+            files = [p for p in sorted(Path(td).glob("src.*")) if p.is_file()]
+            if not files:
+                continue
+            raw = ""
+            for f in files:
+                try:
+                    raw = f.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                if raw.strip():
+                    break
+            text = _normalize_caption_text(raw)
+            if not text:
+                continue
+            return YouTubeCaptionPayload(language=lang, source=source, text=text)
+
+        if last_infra_error:
+            raise last_infra_error
+        raise YouTubeCaptionsError(
+            "captions_unavailable",
+            "Субтитры не были сохранены yt-dlp.",
+            infrastructure=False,
+        )
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
 
 
 def download_youtube_with_ytdlp(url: str, out_path: Path, *, max_seconds: int) -> None:

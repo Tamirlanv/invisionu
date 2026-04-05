@@ -54,7 +54,10 @@ class VideoPipelineOutcome:
     frames_extracted_success: int
     face_detected_frames_count: int
     raw_transcript: str
+    transcript_source: str
     transcript_confidence: float | None
+    captions_language: str | None
+    text_acquisition_error_code: str | None
     commission_summary: str
     candidate_visible: bool
     has_speech: bool
@@ -93,7 +96,10 @@ def _failed_outcome(*, errors: list[str], warnings: list[str] | None = None) -> 
         frames_extracted_success=0,
         face_detected_frames_count=0,
         raw_transcript="",
+        transcript_source="none",
         transcript_confidence=None,
+        captions_language=None,
+        text_acquisition_error_code=None,
         commission_summary=COMMISSION_NO_TEXT,
         candidate_visible=False,
         has_speech=False,
@@ -315,8 +321,12 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
                 errors.append("Недостаточно кадров для устойчивой проверки лица (частичный сбой извлечения).")
 
             raw = ""
+            transcript_source = "none"
             tr_conf: float | None = None
             asr_failed = False
+            captions_language: str | None = None
+            text_acquisition_error_code: str | None = None
+            captions_infra_error = False
             if has_a:
                 wav = Path(tmpdir) / "audio.wav"
                 try:
@@ -324,20 +334,51 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
                     ffmpeg_tools.extract_audio_wav_16k_mono(local_video, wav, max_seconds=audio_cap)
                     try:
                         raw, tr_conf = transcribe_audio_wav(wav)
+                        if raw.strip():
+                            transcript_source = "asr"
                     except ASRTranscriptionError as exc:
                         asr_failed = True
+                        text_acquisition_error_code = "asr_unavailable"
                         warnings.append(
                             f"Транскрибация недоступна: {_normalized_exception_message(exc, fallback='ASR ошибка')}"
                         )
                 except ffmpeg_tools.FFmpegError:
+                    text_acquisition_error_code = text_acquisition_error_code or "audio_extract_failed"
                     warnings.append("Не удалось извлечь аудио для транскрибации.")
                 except Exception:
+                    text_acquisition_error_code = text_acquisition_error_code or "audio_extract_failed"
                     warnings.append("Не удалось распознать речь из аудио.")
                     logger.exception("transcription layer raised")
             else:
+                text_acquisition_error_code = text_acquisition_error_code or "audio_track_missing"
                 warnings.append("Аудиодорожка не обнаружена.")
 
             has_speech = len(raw.strip()) >= MIN_TRANSCRIPT_CHARS
+            if not has_speech and provider == "youtube":
+                try:
+                    captions = ffmpeg_tools.download_youtube_caption_payload(normalized_url or url)
+                    raw = captions.text
+                    has_speech = len(raw.strip()) >= MIN_TRANSCRIPT_CHARS
+                    if has_speech:
+                        transcript_source = "youtube_captions"
+                        captions_language = captions.language
+                        text_acquisition_error_code = None
+                        warnings.append(
+                            f"Транскрипт получен из субтитров YouTube ({captions.source}, язык: {captions.language})."
+                        )
+                except ffmpeg_tools.YouTubeCaptionsError as exc:
+                    msg = _normalized_exception_message(exc, fallback="captions error")
+                    warnings.append(f"Субтитры YouTube недоступны: {msg}")
+                    text_acquisition_error_code = exc.code
+                    captions_infra_error = bool(exc.infrastructure)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("youtube captions fallback failed")
+                    warnings.append(
+                        f"Субтитры YouTube недоступны: {_normalized_exception_message(exc, fallback='captions error')}"
+                    )
+                    text_acquisition_error_code = "captions_fetch_failed"
+                    captions_infra_error = True
+
             if has_speech:
                 try:
                     summary = summarize_transcript_ru(raw).strip()
@@ -360,9 +401,15 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
             else:
                 summary = COMMISSION_NO_TEXT
 
+            text_infra_issue = False
+            if asr_failed and not has_speech:
+                text_infra_issue = True
+            if captions_infra_error and not has_speech:
+                text_infra_issue = True
+
             if errors:
                 media = MEDIA_STATUS_PARTIAL if frames_ok > 0 or has_v else MEDIA_STATUS_FAILED
-            elif asr_failed:
+            elif text_infra_issue:
                 media = MEDIA_STATUS_PARTIAL
             else:
                 media = MEDIA_STATUS_READY
@@ -386,7 +433,10 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
                 frames_extracted_success=frames_ok,
                 face_detected_frames_count=face_hits,
                 raw_transcript=raw,
+                transcript_source=transcript_source,
                 transcript_confidence=tr_conf,
+                captions_language=captions_language,
+                text_acquisition_error_code=text_acquisition_error_code,
                 commission_summary=summary,
                 candidate_visible=candidate_visible,
                 has_speech=has_speech,

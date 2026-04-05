@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from invision_api.commission.application.personal_info_mapper import _map_video_presentation_commission
 from invision_api.services.link_validation.types import VideoLinkValidationResult
 from invision_api.services.video_processing import ffmpeg_tools
-from invision_api.services.video_processing.ffmpeg_tools import FFmpegError, MediaMetadata
+from invision_api.services.video_processing.ffmpeg_tools import FFmpegError, MediaMetadata, YouTubeCaptionsError
 from invision_api.services.video_processing.pipeline import run_presentation_pipeline
 from invision_api.services.video_processing.summary_openai import SummaryProviderError
 from invision_api.services.video_processing.transcription_openai import ASRProviderError
@@ -331,6 +331,97 @@ def test_pipeline_summary_provider_failure_uses_extractive_fallback(monkeypatch,
     assert any("суммаризация недоступна" in w.lower() for w in out.warnings)
 
 
+def test_pipeline_youtube_captions_fallback_on_asr_failure(monkeypatch, tmp_path) -> None:
+    out_path = tmp_path / "video8.mkv"
+    out_path.write_bytes(b"ok")
+
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.validate_presentation_video_only", lambda _url: _ok_preflight("youtube"))
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.make_temp_video_path", lambda: out_path)
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.download_media_url_to_file",
+        lambda _url, _out, max_seconds: None,
+    )
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.probe_media_metadata",
+        lambda _path: MediaMetadata(
+            duration_sec=180.0,
+            has_video=True,
+            has_audio=True,
+            width=1280,
+            height=720,
+            codec_video="h264",
+            codec_audio="aac",
+            container="mp4",
+        ),
+    )
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.extract_frame_png", lambda _p, png, timestamp_sec: png.write_bytes(b"x"))
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.frame_has_face", lambda _png: True)
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.extract_audio_wav_16k_mono", lambda _p, wav, max_seconds: wav.write_bytes(b"wav"))
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.transcribe_audio_wav",
+        lambda _wav: (_ for _ in ()).throw(ASRProviderError("asr down")),
+    )
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.download_youtube_caption_payload",
+        lambda _url: ffmpeg_tools.YouTubeCaptionPayload(
+            language="en",
+            source="auto",
+            text="Кандидат рассказывает о проекте и своём опыте в команде. Он описывает результат и выводы.",
+        ),
+    )
+
+    out = run_presentation_pipeline("https://youtube.com/watch?v=abc")
+    assert out.media_status == "ready"
+    assert out.transcript_source == "youtube_captions"
+    assert out.captions_language == "en"
+    assert out.text_acquisition_error_code is None
+    assert out.commission_summary != "Текст не обнаружен"
+
+
+def test_pipeline_youtube_captions_infra_failure_keeps_partial(monkeypatch, tmp_path) -> None:
+    out_path = tmp_path / "video9.mkv"
+    out_path.write_bytes(b"ok")
+
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.validate_presentation_video_only", lambda _url: _ok_preflight("youtube"))
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.make_temp_video_path", lambda: out_path)
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.download_media_url_to_file",
+        lambda _url, _out, max_seconds: None,
+    )
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.probe_media_metadata",
+        lambda _path: MediaMetadata(
+            duration_sec=180.0,
+            has_video=True,
+            has_audio=True,
+            width=1280,
+            height=720,
+            codec_video="h264",
+            codec_audio="aac",
+            container="mp4",
+        ),
+    )
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.extract_frame_png", lambda _p, png, timestamp_sec: png.write_bytes(b"x"))
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.frame_has_face", lambda _png: True)
+    monkeypatch.setattr("invision_api.services.video_processing.pipeline.ffmpeg_tools.extract_audio_wav_16k_mono", lambda _p, wav, max_seconds: wav.write_bytes(b"wav"))
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.transcribe_audio_wav",
+        lambda _wav: (_ for _ in ()).throw(ASRProviderError("asr timeout")),
+    )
+    monkeypatch.setattr(
+        "invision_api.services.video_processing.pipeline.ffmpeg_tools.download_youtube_caption_payload",
+        lambda _url: (_ for _ in ()).throw(
+            YouTubeCaptionsError("captions_rate_limited", "429", infrastructure=True)
+        ),
+    )
+
+    out = run_presentation_pipeline("https://youtube.com/watch?v=abc")
+    assert out.media_status == "partial"
+    assert out.transcript_source == "none"
+    assert out.text_acquisition_error_code == "captions_rate_limited"
+    assert out.commission_summary == "Текст не обнаружен"
+
+
 def test_select_best_ytdlp_output_prefers_video_with_audio(monkeypatch, tmp_path) -> None:
     v_only = tmp_path / "src.v.mp4"
     av = tmp_path / "src.av.mp4"
@@ -351,3 +442,30 @@ def test_select_best_ytdlp_output_prefers_video_with_audio(monkeypatch, tmp_path
     )
     selected = ffmpeg_tools._select_best_ytdlp_output([v_only, av, a_only])
     assert selected == av
+
+
+def test_pick_caption_track_prefers_ru_then_en_then_any() -> None:
+    meta = {
+        "subtitles": {"fr": [{}]},
+        "automatic_captions": {"en": [{}], "ru": [{}]},
+    }
+    lang, source = ffmpeg_tools._pick_caption_track(meta)  # type: ignore[attr-defined]
+    assert lang == "ru"
+    assert source == "auto"
+
+
+def test_normalize_caption_text_removes_timecodes_and_tags() -> None:
+    raw = """WEBVTT
+
+00:00:00.000 --> 00:00:01.200 align:start
+<c>Привет</c>
+
+00:00:01.300 --> 00:00:02.500
+Привет
+Мир
+"""
+    txt = ffmpeg_tools._normalize_caption_text(raw)  # type: ignore[attr-defined]
+    assert "WEBVTT" not in txt
+    assert "-->" not in txt
+    assert "<c>" not in txt
+    assert txt == "Привет Мир"

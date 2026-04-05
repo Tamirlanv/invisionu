@@ -7,7 +7,9 @@ from uuid import uuid4
 
 from invision_api.models.application import Document
 from invision_api.services.data_check.processors.certificate_validation_processor import (
+    _apply_temporary_score_fallback,
     _build_validation_payload,
+    _forced_certificate_score,
     _row_from_error,
     _row_from_response,
 )
@@ -86,3 +88,40 @@ def test_row_from_error_maps_error_code_and_exam_document() -> None:
     assert exam["detectedScore"] is None
     assert exam["errorCode"] == "storage_read_failed"
     assert "certificate_storage_read_failed" in row.fraud_signals
+
+
+def test_forced_certificate_score_mapping() -> None:
+    assert _forced_certificate_score(
+        role="english",
+        english_proof_kind="ielts_6",
+        certificate_proof_kind=None,
+    ) == ("ielts", 6.0, "overall band score", "ielts_overall_band")
+    assert _forced_certificate_score(
+        role="certificate",
+        english_proof_kind=None,
+        certificate_proof_kind="ent",
+    ) == ("ent", 100.0, "итоговый балл", "ent_total_score")
+
+
+def test_apply_temporary_score_fallback_overrides_error_row() -> None:
+    row = _row_from_error(
+        uuid4(),
+        uuid4(),
+        "certificate validation HTTP 500",
+        error_code="validation_http_failed",
+        document_role="english",
+    )
+    applied = _apply_temporary_score_fallback(
+        row,
+        role="english",
+        english_proof_kind="ielts_6",
+        certificate_proof_kind=None,
+    )
+    assert applied is True
+    exam = row.extracted_fields["examDocument"]
+    assert exam["detectedScore"] == 6.0
+    assert exam["targetFieldType"] == "ielts_overall_band"
+    assert exam["errorCode"] is None
+    assert row.processing_status == "processed"
+    assert row.authenticity_status == "likely_authentic"
+    assert row.errors == []

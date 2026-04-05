@@ -23,6 +23,10 @@ def _detect_video_error_code(errors: list[str], warnings: list[str] | None = Non
         return None
     if "транскрибация недоступна" in blob or "asr" in blob:
         return "asr_unavailable"
+    if "субтитры youtube недоступны" in blob or "captions" in blob:
+        if "429" in blob or "rate" in blob:
+            return "captions_rate_limited"
+        return "captions_unavailable"
     if "суммаризация недоступна" in blob:
         return "summary_unavailable"
     if "yt-dlp" in blob or "yt_dlp" in blob:
@@ -98,6 +102,7 @@ def run_video_validation_processing(db: Session, *, application_id: UUID, candid
 
     analyzed = outcome.frames_extracted_success
     error_code = _detect_video_error_code(list(outcome.errors), list(outcome.warnings))
+    effective_error_code = outcome.text_acquisition_error_code or error_code
     row = VideoValidationResultRow(
         application_id=application_id,
         video_url=video_url,
@@ -127,6 +132,8 @@ def run_video_validation_processing(db: Session, *, application_id: UUID, candid
             "Видеопрезентация обработана.",
             f"Источник: {outcome.provider}",
             f"Стратегия загрузки: {outcome.ingestion_strategy}",
+            f"Источник транскрипта: {outcome.transcript_source}",
+            f"Язык субтитров: {outcome.captions_language}" if outcome.captions_language else "Язык субтитров: -",
         ],
         warnings=outcome.warnings,
         errors=list(outcome.errors),
@@ -153,7 +160,10 @@ def run_video_validation_processing(db: Session, *, application_id: UUID, candid
             "container": outcome.container,
             "candidateVisible": outcome.candidate_visible,
             "summary": row.summary_text,
-            "errorCode": error_code,
+            "transcriptSource": outcome.transcript_source,
+            "captionsLanguage": outcome.captions_language,
+            "textAcquisitionErrorCode": outcome.text_acquisition_error_code,
+            "errorCode": effective_error_code,
         },
         warnings=outcome.warnings,
         errors=list(outcome.errors),
