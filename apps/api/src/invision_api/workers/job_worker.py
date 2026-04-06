@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy.orm import Session
 
 from invision_api.core.redis_client import get_redis_client
 from invision_api.db.session import SessionLocal
@@ -16,6 +19,29 @@ from invision_api.services.job_dispatcher_service import QUEUE_NAME
 from invision_api.services import text_extraction_service
 from invision_api.services.stages import initial_screening_service
 
+logger = logging.getLogger(__name__)
+
+_TERMINAL_ANALYSIS_JOB_STATUSES = {
+    JobStatus.completed.value,
+    JobStatus.failed.value,
+    JobStatus.dead.value,
+}
+
+
+def _mark_analysis_job_failed(db: Session, analysis_job_id: UUID | None, *, reason_code: str) -> None:
+    if not analysis_job_id:
+        return
+    job_row = admissions_repository.get_analysis_job(db, analysis_job_id)
+    if not job_row:
+        return
+    admissions_repository.update_analysis_job(
+        db,
+        job_row,
+        status=JobStatus.failed.value,
+        attempts=(job_row.attempts or 0) + 1,
+        last_error=reason_code[:500],
+    )
+
 
 def process_payload(payload: dict[str, Any]) -> None:
     job_type = payload.get("job_type")
@@ -25,7 +51,74 @@ def process_payload(payload: dict[str, Any]) -> None:
     try:
         if job_type == JobType.extract_text.value:
             doc_id = UUID(payload["document_id"])
-            text_extraction_service.extract_and_persist_for_document(db, doc_id)
+            analysis_job = (
+                admissions_repository.get_analysis_job(db, analysis_job_id)
+                if analysis_job_id
+                else None
+            )
+            if analysis_job and analysis_job.status in _TERMINAL_ANALYSIS_JOB_STATUSES:
+                logger.info(
+                    "extract_text_skip_terminal_analysis_job application=%s analysis_job_id=%s status=%s",
+                    app_id,
+                    analysis_job_id,
+                    analysis_job.status,
+                )
+                db.commit()
+                return
+            if analysis_job:
+                admissions_repository.update_analysis_job(
+                    db,
+                    analysis_job,
+                    status=JobStatus.running.value,
+                    attempts=(analysis_job.attempts or 0) + 1,
+                )
+
+            app = admissions_repository.get_application_by_id(db, app_id)
+            if not app:
+                reason = f"stale_application_context:application_not_found:{app_id}"
+                _mark_analysis_job_failed(db, analysis_job_id, reason_code=reason)
+                logger.warning(
+                    "extract_text_stale_application_context application=%s analysis_job_id=%s document_id=%s",
+                    app_id,
+                    analysis_job_id,
+                    doc_id,
+                )
+                db.commit()
+                return
+
+            try:
+                text_extraction_service.extract_and_persist_for_document(db, doc_id)
+            except text_extraction_service.DocumentNotFoundError:
+                reason = f"stale_document_not_found:{doc_id}"
+                _mark_analysis_job_failed(db, analysis_job_id, reason_code=reason)
+                logger.warning(
+                    "extract_text_stale_document application=%s analysis_job_id=%s document_id=%s",
+                    app_id,
+                    analysis_job_id,
+                    doc_id,
+                )
+                db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                reason = f"extract_text_exception:{str(exc)[:300]}"
+                _mark_analysis_job_failed(db, analysis_job_id, reason_code=reason)
+                logger.exception(
+                    "extract_text_job_failed application=%s analysis_job_id=%s document_id=%s",
+                    app_id,
+                    analysis_job_id,
+                    doc_id,
+                )
+                db.commit()
+                return
+
+            if analysis_job_id:
+                analysis_job = admissions_repository.get_analysis_job(db, analysis_job_id)
+                if analysis_job:
+                    admissions_repository.update_analysis_job(
+                        db,
+                        analysis_job,
+                        status=JobStatus.completed.value,
+                    )
             db.commit()
         elif job_type == JobType.initial_screening.value:
             app = admissions_repository.get_application_by_id(db, app_id)

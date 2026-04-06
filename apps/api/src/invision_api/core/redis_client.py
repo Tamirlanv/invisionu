@@ -9,7 +9,14 @@ from invision_api.core.config import get_settings
 @lru_cache
 def get_redis_client() -> redis.Redis:
     settings = get_settings()
-    return redis.Redis.from_url(str(settings.redis_url), decode_responses=True)
+    return redis.Redis.from_url(
+        str(settings.redis_url),
+        decode_responses=True,
+        socket_keepalive=True,
+        health_check_interval=30,
+        retry_on_timeout=True,
+        socket_connect_timeout=5,
+    )
 
 
 def redis_ping() -> bool:

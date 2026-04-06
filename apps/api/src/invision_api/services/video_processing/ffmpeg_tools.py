@@ -26,6 +26,13 @@ class YouTubeCaptionsError(FFmpegError):
         self.infrastructure = infrastructure
 
 
+class YouTubeMetadataError(FFmpegError):
+    def __init__(self, code: str, message: str, *, infrastructure: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.infrastructure = infrastructure
+
+
 @dataclass(frozen=True)
 class MediaMetadata:
     duration_sec: float
@@ -45,9 +52,26 @@ class YouTubeCaptionPayload:
     text: str
 
 
+@dataclass(frozen=True)
+class YouTubeMetadataPayload:
+    duration_sec: float
+    width: int | None
+    height: int | None
+    has_video: bool
+    has_audio: bool
+    codec_video: str | None
+    codec_audio: str | None
+    container: str | None
+
+
 _TIMECODE_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}\s+-->\s+\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}")
 _TAG_RE = re.compile(r"<[^>]+>")
 _VTT_CUE_SETTINGS_RE = re.compile(r"\b(line|position|size|align|vertical):\S+")
+_CAPTION_METADATA_LINE_RE = re.compile(
+    r"^(kind|language|x-timestamp-map|region|style)\s*[:=]",
+    re.IGNORECASE,
+)
+_CUE_ID_RE = re.compile(r"^cue-\d+$", re.IGNORECASE)
 
 
 def _run(args: list[str], *, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -350,6 +374,10 @@ def _normalize_caption_text(raw: str) -> str:
         su = s.upper()
         if su == "WEBVTT" or su.startswith("NOTE"):
             continue
+        if _CAPTION_METADATA_LINE_RE.match(s):
+            continue
+        if _CUE_ID_RE.match(s):
+            continue
         if _TIMECODE_RE.match(s):
             continue
         if s.isdigit():
@@ -404,7 +432,85 @@ def _pick_caption_track(meta: dict[str, Any]) -> tuple[str, str] | None:
     return candidates[0] if candidates else None
 
 
-def download_youtube_caption_payload(url: str, *, timeout_seconds: int = 300) -> YouTubeCaptionPayload:
+def fetch_youtube_metadata(url: str, *, timeout_seconds: int = 300) -> YouTubeMetadataPayload:
+    ytdlp = resolve_media_runtime_binaries(include_ytdlp=True).get("yt-dlp")
+    if not ytdlp:
+        raise YouTubeMetadataError(
+            "missing_ytdlp",
+            "Для обработки YouTube нужен yt-dlp в PATH.",
+            infrastructure=True,
+        )
+
+    info_args = [
+        ytdlp,
+        "--no-playlist",
+        "--skip-download",
+        "--dump-single-json",
+        url,
+    ]
+    info = _run(info_args, timeout=timeout_seconds)
+    if info.returncode != 0:
+        stderr = (info.stderr or "").strip()
+        if "429" in stderr:
+            raise YouTubeMetadataError(
+                "metadata_rate_limited",
+                "YouTube временно ограничил доступ к метаданным (429).",
+                infrastructure=True,
+            )
+        raise YouTubeMetadataError(
+            "metadata_fetch_failed",
+            stderr or "Не удалось получить метаданные YouTube.",
+            infrastructure=True,
+        )
+    try:
+        meta = json.loads(info.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise YouTubeMetadataError(
+            "metadata_fetch_failed",
+            "Неверный формат метаданных YouTube.",
+            infrastructure=True,
+        ) from exc
+
+    duration_raw = meta.get("duration")
+    try:
+        duration = float(duration_raw) if duration_raw is not None else 0.0
+    except (TypeError, ValueError):
+        duration = 0.0
+
+    width: int | None = None
+    height: int | None = None
+    for key in ("width", "height"):
+        try:
+            value = meta.get(key)
+            if key == "width":
+                width = int(value) if value is not None else None
+            else:
+                height = int(value) if value is not None else None
+        except (TypeError, ValueError):
+            if key == "width":
+                width = None
+            else:
+                height = None
+
+    vcodec = str(meta.get("vcodec") or "").strip() or None
+    acodec = str(meta.get("acodec") or "").strip() or None
+    has_video = bool(vcodec and vcodec.lower() != "none") or bool(width and height)
+    has_audio = bool(acodec and acodec.lower() != "none")
+    container = str(meta.get("ext") or "").strip() or None
+
+    return YouTubeMetadataPayload(
+        duration_sec=duration,
+        width=width,
+        height=height,
+        has_video=has_video,
+        has_audio=has_audio,
+        codec_video=vcodec if vcodec and vcodec.lower() != "none" else None,
+        codec_audio=acodec if acodec and acodec.lower() != "none" else None,
+        container=container,
+    )
+
+
+def fetch_youtube_captions_text(url: str, *, timeout_seconds: int = 300) -> YouTubeCaptionPayload:
     ytdlp = resolve_media_runtime_binaries(include_ytdlp=True).get("yt-dlp")
     if not ytdlp:
         raise YouTubeCaptionsError(
@@ -515,6 +621,11 @@ def download_youtube_caption_payload(url: str, *, timeout_seconds: int = 300) ->
         )
     finally:
         shutil.rmtree(td, ignore_errors=True)
+
+
+def download_youtube_caption_payload(url: str, *, timeout_seconds: int = 300) -> YouTubeCaptionPayload:
+    """Backward-compatible alias."""
+    return fetch_youtube_captions_text(url, timeout_seconds=timeout_seconds)
 
 
 def download_youtube_with_ytdlp(url: str, out_path: Path, *, max_seconds: int) -> None:

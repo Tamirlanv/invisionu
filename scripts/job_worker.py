@@ -20,6 +20,8 @@ import sys
 import threading
 import time
 
+import redis
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "apps", "api", "src"))
 
 from invision_api.core.config import get_settings
@@ -53,6 +55,7 @@ def _env_bool(name: str, default: bool) -> bool:
 HEARTBEAT_TTL = _env_int("WORKER_HEARTBEAT_TTL_SECONDS", 180)
 HEARTBEAT_INTERVAL_SECONDS = _env_int("WORKER_HEARTBEAT_INTERVAL_SECONDS", 20)
 DATA_CHECK_SWEEP_INTERVAL_SECONDS = _env_int("DATA_CHECK_SWEEP_INTERVAL_SECONDS", 30)
+REDIS_STARTUP_WAIT_SECONDS = _env_int("WORKER_REDIS_STARTUP_WAIT_SECONDS", 45)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,7 +84,10 @@ def _run_sweep() -> None:
         try:
             recovered = sweep_stuck_runs(db)
             db.commit()
-            logger.info("sweep_done recovered=%d", recovered)
+            if recovered > 0:
+                logger.info("sweep_done recovered=%d", recovered)
+            else:
+                logger.debug("sweep_done recovered=0")
         except Exception:
             db.rollback()
             logger.exception("sweep_error")
@@ -130,8 +136,24 @@ def _run_commission_interview_reminder_sweep() -> None:
         logger.exception("commission_interview_reminder_sweep_session_error")
 
 
+def _wait_for_redis_ready(r, *, timeout_seconds: int) -> None:
+    """Wait for Redis to become reachable before entering BRPOP loop."""
+    deadline = time.monotonic() + max(1, timeout_seconds)
+    last_error: str | None = None
+    while time.monotonic() < deadline:
+        try:
+            if r.ping():
+                logger.info("Redis ping OK — worker queue loop can start.")
+                return
+        except (redis.RedisError, OSError) as exc:
+            last_error = str(exc) or exc.__class__.__name__
+        time.sleep(1)
+    raise RuntimeError(f"Redis not ready within {timeout_seconds}s: {last_error or 'ping failed'}")
+
+
 def main() -> None:
     r = get_redis_client()
+    _wait_for_redis_ready(r, timeout_seconds=REDIS_STARTUP_WAIT_SECONDS)
     stop_event = threading.Event()
     settings = get_settings()
     require_media_bins = _env_bool(
@@ -195,6 +217,22 @@ def main() -> None:
     while True:
         try:
             item = r.brpop(QUEUE_NAME, timeout=10)
+        except redis.RedisError as exc:
+            logger.warning(
+                "brpop_connection_error kind=%s msg=%s — will retry in 5s",
+                exc.__class__.__name__,
+                str(exc) or "-",
+            )
+            time.sleep(5)
+            continue
+        except OSError as exc:
+            logger.warning(
+                "brpop_os_error kind=%s msg=%s — will retry in 5s",
+                exc.__class__.__name__,
+                str(exc) or "-",
+            )
+            time.sleep(5)
+            continue
         except Exception:
             logger.exception("brpop_error — will retry in 5s")
             time.sleep(5)

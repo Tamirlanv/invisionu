@@ -62,6 +62,7 @@ export function AIInterviewPanel({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edited, setEdited] = useState<AiInterviewDraftQuestion[] | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -156,6 +157,7 @@ export function AIInterviewPanel({
         </h3>
         <button
           type="button"
+          onClick={() => setIsHelpOpen(true)}
           style={{
             margin: 0,
             padding: 0,
@@ -275,6 +277,71 @@ export function AIInterviewPanel({
           </div>
         </>
       )}
+
+      <AiInterviewHowItWorksModal open={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </section>
+  );
+}
+
+type AiInterviewHowItWorksModalProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+function AiInterviewHowItWorksModal({ open, onClose }: AiInterviewHowItWorksModalProps) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ai-interview-how-it-works-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.45)",
+        padding: 16,
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          width: "min(560px, 100%)",
+          background: "#fff",
+          borderRadius: 16,
+          padding: "24px 20px",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+        }}
+      >
+        <h2 id="ai-interview-how-it-works-title" style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 600 }}>
+          Как формируются вопросы
+        </h2>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: "#262626" }}>
+          Вопросы собираются из анкеты кандидата и материалов заявки. Они помогают комиссии точечно уточнить слабые
+          или спорные места, закрыть противоречия и добрать недостающие детали. Поэтому у разных кандидатов набор
+          вопросов отличается и зависит от того, что именно осталось не до конца раскрыто.
+        </p>
+        <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}>
+          <button type="button" className="btn" style={{ width: "fit-content" }} onClick={onClose}>
+            Понятно
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

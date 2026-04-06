@@ -16,6 +16,10 @@ _GENERIC_PATTERNS = (
     "в целом",
     "в общем",
 )
+_TECHNICAL_SENTENCE_RE = re.compile(
+    r"(?:^|\s)(webvtt|kind\s*[:=]|language\s*[:=]|x-timestamp-map\s*[:=]|region\s*[:=]|style\s*[:=])|-->",
+    re.IGNORECASE,
+)
 _MIN_OUTPUT_SENTENCES = 7
 _MAX_OUTPUT_SENTENCES = 8
 _CHUNK_TARGET_CHARS = 9000
@@ -94,6 +98,10 @@ def _is_generic_sentence(text: str) -> bool:
     return any(p in low for p in _GENERIC_PATTERNS)
 
 
+def _is_technical_sentence(text: str) -> bool:
+    return bool(_TECHNICAL_SENTENCE_RE.search(text))
+
+
 def _dedupe_keep_order(items: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -113,7 +121,7 @@ def _postprocess_summary_text(text: str) -> str:
     normalized = [_normalize_sentence(s) for s in raw_sentences]
     normalized = [s for s in normalized if s]
     normalized = _dedupe_keep_order(normalized)
-    filtered = [s for s in normalized if not _is_generic_sentence(s)]
+    filtered = [s for s in normalized if not _is_generic_sentence(s) and not _is_technical_sentence(s)]
     final_sentences = filtered if len(filtered) >= _MIN_OUTPUT_SENTENCES else normalized
     if len(final_sentences) < _MIN_OUTPUT_SENTENCES:
         return ""

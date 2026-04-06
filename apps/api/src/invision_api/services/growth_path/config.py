@@ -21,7 +21,6 @@ MAX_REPEATED_SENTENCE_RATIO: Final[float] = 0.4
 
 # Banned / spammy short phrases (case-insensitive substring after normalize).
 SPAM_PHRASES: Final[tuple[str, ...]] = (
-    "я понял",
     "lorem ipsum",
     "тест тест",
     "asdf",

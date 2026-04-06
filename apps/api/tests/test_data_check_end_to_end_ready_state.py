@@ -267,6 +267,50 @@ def test_sweep_recovers_stuck_queued_units(db: Session, factory, monkeypatch):
     assert len(enqueued_units) > 0
 
 
+def test_sweep_retires_noncanonical_run_and_avoids_per_run_skip_log(
+    db: Session, factory, monkeypatch, caplog
+):
+    from invision_api.services.data_check.orchestrator_service import SWEEP_STALE_MINUTES, sweep_stuck_runs
+
+    user = factory.user(db)
+    profile = factory.profile(db, user)
+    app = factory.application(db, profile, state="under_screening")
+    app.current_stage = ApplicationStage.initial_screening.value
+    db.flush()
+
+    noncanonical = data_check_repository.create_run(
+        db,
+        candidate_id=profile.id,
+        application_id=app.id,
+        status="running",
+    )
+    data_check_repository.create_check(
+        db,
+        run_id=noncanonical.id,
+        check_type="links",
+        status="running",
+        result_payload=None,
+    )
+
+    stale_time = datetime.now(tz=UTC) - timedelta(minutes=SWEEP_STALE_MINUTES + 5)
+    noncanonical.updated_at = stale_time
+    db.flush()
+
+    caplog.set_level("INFO")
+    recovered = sweep_stuck_runs(db)
+    assert recovered >= 1
+
+    updated_run = data_check_repository.get_run(db, noncanonical.id)
+    assert updated_run is not None
+    assert updated_run.overall_status == "failed"
+    assert "noncanonical_run_retired" in (updated_run.errors or [])
+    assert any("non-canonical" in line.lower() for line in (updated_run.explainability or []))
+
+    all_logs = " | ".join(record.message for record in caplog.records)
+    assert "sweep_skip_noncanonical run=" not in all_logs
+    assert "sweep_noncanonical_summary" in all_logs
+
+
 def test_list_stuck_checks_includes_stale_pending(db: Session, factory, monkeypatch):
     """Stale pending units are included so sweep can re-enqueue them like queued/running."""
     from invision_api.services.data_check.orchestrator_service import SWEEP_STALE_MINUTES

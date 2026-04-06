@@ -73,6 +73,39 @@ def _asr_partial_outcome() -> VideoPipelineOutcome:
     )
 
 
+def _youtube_too_long_outcome() -> VideoPipelineOutcome:
+    return VideoPipelineOutcome(
+        provider="youtube",
+        resource_type="video",
+        ingestion_strategy="youtube_ytdlp",
+        normalized_url="https://www.youtube.com/watch?v=too_long",
+        access_status="reachable",
+        duration_sec=401,
+        duration_formatted="6:41",
+        width=1280,
+        height=720,
+        codec_video="h264",
+        codec_audio="aac",
+        container="mp4",
+        has_video_track=True,
+        has_audio_track=True,
+        sampled_timestamps_sec=[],
+        frames_extracted_success=0,
+        face_detected_frames_count=0,
+        raw_transcript="",
+        transcript_source="none",
+        transcript_confidence=None,
+        captions_language=None,
+        text_acquisition_error_code=None,
+        commission_summary="Видео длиннее 6 минут",
+        candidate_visible=False,
+        has_speech=False,
+        warnings=[],
+        errors=[],
+        media_status="ready",
+    )
+
+
 def test_video_validation_processor_persists_extended_payload_and_manual_state(
     db: Session, factory, monkeypatch
 ) -> None:
@@ -131,3 +164,21 @@ def test_video_validation_processor_marks_asr_partial_with_error_code(db: Sessio
     assert result.payload["mediaStatus"] == "partial"
     assert result.payload["errorCode"] == "asr_unavailable"
     assert result.payload["textAcquisitionErrorCode"] == "asr_unavailable"
+
+
+def test_video_validation_processor_marks_youtube_too_long_as_completed(db: Session, factory, monkeypatch) -> None:
+    user = factory.user(db)
+    profile = factory.profile(db, user)
+    app = factory.application(db, profile, state="under_screening")
+    factory.fill_required_sections(db, app)
+
+    monkeypatch.setattr(
+        "invision_api.services.data_check.processors.video_validation_processor.run_presentation_pipeline",
+        lambda _url: _youtube_too_long_outcome(),
+    )
+
+    result = run_video_validation_processing(db, application_id=app.id, candidate_id=profile.id)
+    assert result.status == "completed"
+    assert result.payload is not None
+    assert result.payload["mediaStatus"] == "ready"
+    assert result.payload["summary"] == "Видео длиннее 6 минут"

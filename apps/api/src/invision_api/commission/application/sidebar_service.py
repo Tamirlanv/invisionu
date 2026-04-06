@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from invision_api.models.application import Application, TextAnalysisRun
+from invision_api.models.application import AIReviewMetadata, Application, TextAnalysisRun
 from invision_api.models.candidate_signals_aggregate import CandidateSignalsAggregate
 from invision_api.models.data_check_unit_result import DataCheckUnitResult
 from invision_api.repositories import data_check_repository
@@ -44,7 +44,7 @@ _DATA_CHECK_UNIT_LABEL_RU: dict[str, str] = {
     DataCheckUnitType.video_validation.value: "Видео-презентация",
     DataCheckUnitType.certificate_validation.value: "Документы и сертификаты",
     DataCheckUnitType.signals_aggregation.value: "Сводка сигналов по заявке",
-    DataCheckUnitType.candidate_ai_summary.value: "AI-сводка по заявке",
+    DataCheckUnitType.candidate_ai_summary.value: "Итоговая сводка по заявке",
 }
 
 
@@ -1361,13 +1361,155 @@ def _build_path_summary_panel(db: Session, application_id: UUID) -> dict[str, An
     }
 
 
+_SECTION_LABELS_RU: dict[str, str] = {
+    "personal": "личные данные",
+    "test": "тест",
+    "motivation": "мотивация",
+    "path": "путь",
+    "achievements": "достижения",
+}
+
+
+def _is_generic_summary_text(text: str) -> bool:
+    low = (text or "").strip().lower()
+    if not low:
+        return True
+    technical_markers = (
+        "автоматическ",
+        "статус готовности",
+        "зоны внимания:",
+        "ограниченном режиме",
+        "degraded",
+        "unit outputs",
+    )
+    return any(marker in low for marker in technical_markers)
+
+
+def _compute_recommended_scores_snapshot(db: Session, application_id: UUID) -> tuple[float, dict[str, float]]:
+    from invision_api.commission.application.section_score_service import compute_recommended_scores
+
+    section_avgs: dict[str, float] = {}
+    all_values: list[int] = []
+    for section in ("personal", "test", "motivation", "path", "achievements"):
+        recommended = compute_recommended_scores(db, application_id, section)
+        values = [int(v) for v in recommended.values() if type(v) is int]
+        if not values:
+            continue
+        section_avgs[section] = sum(values) / len(values)
+        all_values.extend(values)
+    overall_avg = (sum(all_values) / len(all_values)) if all_values else 3.0
+    return overall_avg, section_avgs
+
+
+def _load_candidate_summary_source(db: Session, application_id: UUID) -> dict[str, Any]:
+    unit_summary: str | None = None
+    canonical_run = data_check_repository.resolve_preferred_run_for_application(db, application_id)
+    if canonical_run:
+        for row in data_check_repository.list_unit_results_for_run(db, canonical_run.id):
+            if row.unit_type != DataCheckUnitType.candidate_ai_summary.value:
+                continue
+            payload = row.result_payload if isinstance(row.result_payload, dict) else {}
+            raw = str(payload.get("summary") or "").strip()
+            if raw:
+                unit_summary = raw
+            break
+
+    latest_ai = db.scalars(
+        select(AIReviewMetadata)
+        .where(AIReviewMetadata.application_id == application_id)
+        .order_by(AIReviewMetadata.created_at.desc())
+    ).first()
+    flags = latest_ai.flags if (latest_ai and isinstance(latest_ai.flags, dict)) else {}
+    strengths = [str(x).strip() for x in (flags.get("strengths") or []) if str(x).strip()]
+    weak_points = [str(x).strip() for x in (flags.get("weak_points") or []) if str(x).strip()]
+    recommendation = str(flags.get("recommendation") or "").strip().lower() or None
+    persisted_summary = str((latest_ai.summary_text if latest_ai else "") or "").strip() or None
+
+    summary_text = unit_summary or persisted_summary
+    return {
+        "summaryText": summary_text,
+        "strengths": strengths,
+        "weakPoints": weak_points,
+        "recommendation": recommendation,
+    }
+
+
+def _build_final_summary_block(
+    db: Session,
+    application_id: UUID,
+) -> tuple[list[str], float]:
+    source = _load_candidate_summary_source(db, application_id)
+    avg_score, section_avgs = _compute_recommended_scores_snapshot(db, application_id)
+
+    summary_text = str(source.get("summaryText") or "").strip()
+    if _is_generic_summary_text(summary_text):
+        summary_text = ""
+    summary_line = (
+        _build_compact_summary(summary_text, fallback="", max_sentences=3, max_sentence_len=240)
+        if summary_text
+        else ""
+    )
+    if not summary_line:
+        if avg_score >= 4.0:
+            summary_line = "Кандидат показывает сильный и достаточно целостный профиль по основным разделам анкеты."
+        elif avg_score >= 3.5:
+            summary_line = "Профиль кандидата в целом устойчивый, с рабочим уровнем по ключевым разделам."
+        elif avg_score >= 3.0:
+            summary_line = "Профиль кандидата смешанный: есть рабочая база, но часть разделов требует дополнительной проверки."
+        else:
+            summary_line = "Профиль кандидата пока выглядит слабым: в нескольких разделах не хватает доказательности и глубины."
+
+    strengths = [str(x).strip() for x in (source.get("strengths") or []) if str(x).strip()]
+    weak_points = [str(x).strip() for x in (source.get("weakPoints") or []) if str(x).strip()]
+    strong_sections = [name for name, val in section_avgs.items() if val >= 4.0]
+    weak_sections = [name for name, val in section_avgs.items() if val < 3.5]
+
+    if strengths:
+        strengths_line = f"Сильные стороны: {', '.join(strengths[:3])}."
+    elif strong_sections:
+        labels = [_SECTION_LABELS_RU.get(key, key) for key in strong_sections[:3]]
+        strengths_line = f"Сильные стороны: более уверенные результаты в разделах «{'», «'.join(labels)}»."
+    else:
+        strengths_line = "Сильные стороны: базовый уровень по ключевым разделам сохранён."
+
+    if weak_points:
+        weak_line = f"Ограничения: {', '.join(weak_points[:3])}."
+    elif weak_sections:
+        labels = [_SECTION_LABELS_RU.get(key, key) for key in weak_sections[:3]]
+        weak_line = f"Ограничения: требуют внимания разделы «{'», «'.join(labels)}»."
+    else:
+        weak_line = "Ограничения: критичных слабых зон по текущим данным не выявлено."
+
+    rec = str(source.get("recommendation") or "")
+    if rec == "recommend" or avg_score >= 4.0:
+        profile_line = "Общий характер профиля: сильный, с хорошей готовностью к следующему этапу."
+    elif rec == "caution" or avg_score < 3.5:
+        profile_line = "Общий характер профиля: неоднородный, часть выводов нуждается в дополнительном подтверждении."
+    else:
+        profile_line = "Общий характер профиля: рабочий, с потенциалом при адресном уточнении отдельных зон."
+
+    return [summary_line, strengths_line, weak_line, profile_line], avg_score
+
+
+def _build_recommendation_block(avg_score: float) -> list[str]:
+    display = f"{avg_score:.1f}"
+    if avg_score < 3.5:
+        return [
+            f"Средний рекомендованный балл: {display}",
+            "Рекомендуется: отправить в архив",
+        ]
+    return [
+        f"Средний рекомендованный балл: {display}",
+        "Рекомендуется: отправить на собеседование",
+    ]
+
+
 def _build_achievements_summary_panel(db: Session, application_id: UUID) -> dict[str, Any]:
     sections: list[dict[str, Any]] = []
     run = _get_analysis_run(db, application_id, "achievements_activities")
     explanations = (run.explanations or {}) if run else {}
     signals = explanations.get("signals", {})
     summary_text = explanations.get("summary", "")
-    links = explanations.get("links", [])
 
     # Block 1: Brief summary
     summary_items: list[str] = []
@@ -1432,7 +1574,14 @@ def _build_achievements_summary_panel(db: Session, application_id: UUID) -> dict
         confirm_items.append("Данные недоступны")
     sections.append(_section_block("Подтверждённость", confirm_items))
 
-    # Block 4: Attention
+    # Block 4: Final candidate summary (cross-section)
+    final_summary_items, avg_recommended = _build_final_summary_block(db, application_id)
+    sections.append(_section_block("Итоговая сводка", final_summary_items))
+
+    # Block 5: Recommendation (transparent rule by average recommended score)
+    sections.append(_section_block("Рекомендация", _build_recommendation_block(avg_recommended)))
+
+    # Block 6: Attention
     attention_items: list[str] = []
     flags = (run.flags or {}) if run else {}
     if flags.get("manual_review_required"):

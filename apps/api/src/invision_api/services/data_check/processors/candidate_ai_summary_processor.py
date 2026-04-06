@@ -16,8 +16,8 @@ def _fallback_summary(*, aggregate_payload: dict[str, Any], attention_flags: lis
     readiness = aggregate_payload.get("readiness") or "unknown"
     flags = ", ".join(attention_flags[:6]) if attention_flags else "нет"
     return (
-        f"Автоматический сводный профиль готов. Статус готовности: {readiness}. "
-        f"Флаги внимания: {flags}. Рекомендуется итоговый human review перед решением."
+        f"Итоговая сводка сформирована автоматически. Текущий статус готовности: {readiness}. "
+        f"Зоны внимания: {flags}. Рекомендуется дополнительная проверка комиссии перед решением."
     )
 
 
@@ -27,7 +27,7 @@ def _fallback_summary_without_aggregate(*, compact_units: dict[str, dict[str, An
     completed_txt = ", ".join(sorted(completed)[:6]) if completed else "нет завершённых блоков"
     problematic_txt = ", ".join(sorted(problematic)[:6]) if problematic else "нет явных ошибок"
     return (
-        "AI-сводка сформирована в деградированном режиме: агрегированные сигналы недоступны. "
+        "Итоговая сводка сформирована в ограниченном режиме: агрегированные сигналы недоступны. "
         f"Завершённые блоки: {completed_txt}. Проблемные блоки: {problematic_txt}. "
         "Требуется ручная проверка комиссии."
     )

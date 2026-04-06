@@ -19,3 +19,17 @@ def test_check_answer_spam_ok_for_plain_unique_text() -> None:
     assert len(t) >= 200
     r = check_answer_spam(t)
     assert r.ok is True
+
+
+def test_check_answer_spam_does_not_flag_neutral_phrase_ya_ponyal() -> None:
+    t = normalize_growth_text(
+        "Я понял, что важно доводить начатое до конца, и стал лучше планировать шаги по проекту."
+    )
+    r = check_answer_spam(t)
+    assert r.ok is True
+
+
+def test_check_answer_spam_uses_phrase_boundaries() -> None:
+    t = normalize_growth_text("слово asdfgh пример нормального текста без мусора")
+    r = check_answer_spam(t)
+    assert r.ok is True

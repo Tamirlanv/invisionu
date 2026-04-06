@@ -107,7 +107,7 @@ def test_data_check_candidate_ai_summary_degraded_fallback_without_aggregate(
 
     assert out.status == "manual_review_required"
     assert out.payload is not None
-    assert "деградирован" in out.payload["summary"].lower()
+    assert "ограниченном режиме" in out.payload["summary"].lower()
 
     ai_rows = list(db.query(AIReviewMetadata).filter(AIReviewMetadata.application_id == app.id).all())
     assert len(ai_rows) == 1

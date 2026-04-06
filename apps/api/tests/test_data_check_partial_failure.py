@@ -87,3 +87,14 @@ def test_commission_human_issues_hide_technical_unit_keys() -> None:
     assert "video_validation" not in joined
     assert "путь" in joined
     assert "видео" in joined
+
+
+def test_candidate_ai_summary_reason_uses_non_technical_name() -> None:
+    statuses = {
+        DataCheckUnitType.candidate_ai_summary: DataCheckUnitStatus.manual_review_required.value,
+    }
+    warnings, errors = build_commission_human_issues(statuses)
+    joined = "; ".join(warnings + errors).lower()
+    assert "итогов" in joined
+    assert "сводк" in joined
+    assert "ai-сводк" not in joined

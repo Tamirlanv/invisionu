@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from invision_api.services.growth_path.config import (
@@ -22,10 +23,16 @@ class SpamCheckResult:
 def check_answer_spam(normalized_text: str) -> SpamCheckResult:
     """Return ok=False if text should be rejected for committee quality gates."""
     reasons: list[str] = []
-    t = normalized_text.lower()
+    t = " ".join(normalized_text.lower().split())
 
     for phrase in SPAM_PHRASES:
-        if phrase in t:
+        # Bound phrase by word boundaries to avoid accidental substring matches.
+        normalized_phrase = " ".join(str(phrase).strip().lower().split())
+        if not normalized_phrase:
+            continue
+        escaped = re.escape(normalized_phrase).replace(r"\ ", r"\s+")
+        pattern = rf"(?<!\w){escaped}(?!\w)"
+        if re.search(pattern, t, flags=re.IGNORECASE):
             reasons.append("spam_phrase")
 
     stats = compute_text_stats(normalized_text)

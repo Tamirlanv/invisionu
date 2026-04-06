@@ -70,7 +70,7 @@ _UNIT_FAILED_REASON_RU: dict[DataCheckUnitType, str] = {
     DataCheckUnitType.video_validation: "Не удалось корректно обработать видео-презентацию.",
     DataCheckUnitType.certificate_validation: "Не удалось автоматически обработать сертификаты.",
     DataCheckUnitType.signals_aggregation: "Не удалось собрать полную сводку сигналов по заявке.",
-    DataCheckUnitType.candidate_ai_summary: "Не удалось собрать итоговую AI-сводку.",
+    DataCheckUnitType.candidate_ai_summary: "Не удалось собрать итоговую сводку.",
 }
 
 _UNIT_MANUAL_REASON_RU: dict[DataCheckUnitType, str] = {
@@ -82,7 +82,7 @@ _UNIT_MANUAL_REASON_RU: dict[DataCheckUnitType, str] = {
     DataCheckUnitType.video_validation: "Не удалось корректно обработать видео-презентацию.",
     DataCheckUnitType.certificate_validation: "Не удалось автоматически обработать сертификаты.",
     DataCheckUnitType.signals_aggregation: "Часть итоговых сводок требует ручной проверки.",
-    DataCheckUnitType.candidate_ai_summary: "Не удалось собрать итоговую AI-сводку.",
+    DataCheckUnitType.candidate_ai_summary: "Не удалось собрать итоговую сводку.",
 }
 
 

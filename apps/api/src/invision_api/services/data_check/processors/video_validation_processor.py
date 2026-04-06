@@ -27,6 +27,10 @@ def _detect_video_error_code(errors: list[str], warnings: list[str] | None = Non
         if "429" in blob or "rate" in blob:
             return "captions_rate_limited"
         return "captions_unavailable"
+    if "метадан" in blob and "youtube" in blob:
+        if "429" in blob or "rate" in blob:
+            return "metadata_rate_limited"
+        return "metadata_fetch_failed"
     if "суммаризация недоступна" in blob:
         return "summary_unavailable"
     if "yt-dlp" in blob or "yt_dlp" in blob:

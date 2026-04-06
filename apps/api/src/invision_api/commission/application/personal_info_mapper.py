@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -9,6 +10,12 @@ from invision_api.commission.domain.types import AIPlaceholderSummary
 from invision_api.models.application import Application, Document
 from invision_api.models.commission import ApplicationCommissionProjection
 from invision_api.models.video_validation import VideoValidationResultRow
+
+_VIDEO_SUMMARY_TECH_RE = re.compile(
+    r"(?:^|\s)(webvtt|kind\s*[:=]|language\s*[:=]|x-timestamp-map\s*[:=]|region\s*[:=]|style\s*[:=])|-->",
+    re.IGNORECASE,
+)
+_VIDEO_SUMMARY_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _str_or_none(value: Any) -> str | None:
@@ -287,6 +294,35 @@ def _format_duration_label(sec: int | None) -> str | None:
     return f"{m}:{s:02d}"
 
 
+def _sanitize_video_summary_text(text: str) -> str:
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not raw:
+        return ""
+    sentences = [s.strip() for s in _VIDEO_SUMMARY_SPLIT_RE.split(raw) if s.strip()]
+    if not sentences:
+        return ""
+    filtered = [s for s in sentences if not _VIDEO_SUMMARY_TECH_RE.search(s)]
+    if not filtered:
+        return ""
+    return " ".join(filtered).strip()
+
+
+def _humanize_video_failure(video_row: VideoValidationResultRow) -> str:
+    errors = getattr(video_row, "errors", None)
+    if isinstance(errors, list):
+        for raw in errors:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            lowered = text.lower()
+            if any(marker in lowered for marker in ("yt-dlp", "ffmpeg", "ffprobe", "metadata", "метадан")):
+                return "Видео временно не удалось обработать автоматически. Требуется ручная проверка комиссии."
+            if "субтитр" in lowered or "captions" in lowered:
+                return "Не удалось получить текст из видео. Требуется ручная проверка комиссии."
+            return text
+    return "Видео временно не удалось обработать автоматически. Требуется ручная проверка комиссии."
+
+
 def _map_video_presentation_commission(
     video_url: str | None,
     video_row: VideoValidationResultRow | None,
@@ -298,10 +334,11 @@ def _map_video_presentation_commission(
         return out
     status = getattr(video_row, "media_status", None)
     if status == "failed":
+        out["summary"] = _humanize_video_failure(video_row)
         return out
     if status not in ("ready", "partial"):
         return out
-    raw_summary = (getattr(video_row, "summary_text", None) or "").strip()
+    raw_summary = _sanitize_video_summary_text((getattr(video_row, "summary_text", None) or "").strip())
     if raw_summary:
         out["borderTone"] = "green"
     out["duration"] = _format_duration_label(getattr(video_row, "duration_sec", None))

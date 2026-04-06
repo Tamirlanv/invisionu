@@ -96,7 +96,7 @@ function _compactIssueCategories(lines: string[]): string[] {
     _containsAny(line, ["сертификат", "certificate", " ielts", "ент", " ent", "toefl"]),
   );
   push("ссылки", (line) => _containsAny(line, ["ссылк", "link"]));
-  push("итоговая AI-сводка", (line) =>
+  push("итоговая сводка", (line) =>
     _containsAny(line, ["ai-сводк", "ai summary", "candidate_ai_summary", "итогов", "summary"]),
   );
   push("мотивация", (line) => _containsAny(line, ["мотивац", "motivation"]));

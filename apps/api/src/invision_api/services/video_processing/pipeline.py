@@ -11,8 +11,10 @@ from invision_api.services.video_processing import ffmpeg_tools
 from invision_api.services.link_validation.service import validate_presentation_video_only
 from invision_api.services.video_processing.constants import (
     COMMISSION_NO_TEXT,
+    COMMISSION_VIDEO_TOO_LONG,
     MAX_AUDIO_FOR_TRANSCRIPTION_SEC,
     MAX_INPUT_DURATION_SEC,
+    MAX_YOUTUBE_SUMMARY_DURATION_SEC,
     MEDIA_STATUS_FAILED,
     MEDIA_STATUS_PARTIAL,
     MEDIA_STATUS_READY,
@@ -26,6 +28,15 @@ from invision_api.services.video_processing.transcription_openai import ASRTrans
 
 logger = logging.getLogger(__name__)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_MULTISPACE_RE = re.compile(r"\s+")
+_TRANSCRIPT_TECH_LINE_RE = re.compile(
+    r"^\s*(kind|language|x-timestamp-map|region|style)\s*[:=]",
+    re.IGNORECASE,
+)
+_TRANSCRIPT_TECH_SENTENCE_RE = re.compile(
+    r"(?:^|\s)(webvtt|kind\s*[:=]|language\s*[:=]|x-timestamp-map\s*[:=]|region\s*[:=]|style\s*[:=])|-->",
+    re.IGNORECASE,
+)
 
 _INGESTION_YOUTUBE = "youtube_ytdlp"
 _INGESTION_GOOGLE_DRIVE = "google_drive_direct_download"
@@ -75,7 +86,12 @@ def _format_duration(total_sec: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def _failed_outcome(*, errors: list[str], warnings: list[str] | None = None) -> VideoPipelineOutcome:
+def _failed_outcome(
+    *,
+    errors: list[str],
+    warnings: list[str] | None = None,
+    text_acquisition_error_code: str | None = None,
+) -> VideoPipelineOutcome:
     w = warnings or []
     return VideoPipelineOutcome(
         provider="unknown",
@@ -99,7 +115,7 @@ def _failed_outcome(*, errors: list[str], warnings: list[str] | None = None) -> 
         transcript_source="none",
         transcript_confidence=None,
         captions_language=None,
-        text_acquisition_error_code=None,
+        text_acquisition_error_code=text_acquisition_error_code,
         commission_summary=COMMISSION_NO_TEXT,
         candidate_visible=False,
         has_speech=False,
@@ -118,8 +134,13 @@ def _failed_outcome_with_context(
     ingestion_strategy: str,
     normalized_url: str | None,
     access_status: str,
+    text_acquisition_error_code: str | None = None,
 ) -> VideoPipelineOutcome:
-    out = _failed_outcome(errors=errors, warnings=warnings)
+    out = _failed_outcome(
+        errors=errors,
+        warnings=warnings,
+        text_acquisition_error_code=text_acquisition_error_code,
+    )
     out.provider = provider or "unknown"
     out.resource_type = resource_type or "unknown"
     out.ingestion_strategy = ingestion_strategy
@@ -138,6 +159,67 @@ def _normalize_summary_sentences(text: str, *, min_sentences: int = 7, max_sente
     if len(parts) > max_sentences:
         parts = parts[:max_sentences]
     return " ".join(parts).strip()
+
+
+def _clean_transcript_for_summary(raw_text: str) -> str:
+    cleaned_lines: list[str] = []
+    for line in str(raw_text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.upper() == "WEBVTT" or line.upper().startswith("NOTE"):
+            continue
+        if _TRANSCRIPT_TECH_LINE_RE.match(line):
+            continue
+        if re.match(r"^\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}\s+-->\s+\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}", line):
+            continue
+        if line.isdigit():
+            continue
+        cleaned_lines.append(line)
+
+    cleaned = _MULTISPACE_RE.sub(" ", " ".join(cleaned_lines)).strip()
+    if not cleaned:
+        return ""
+
+    parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(cleaned) if p.strip()]
+    filtered = [p for p in parts if not _TRANSCRIPT_TECH_SENTENCE_RE.search(p)]
+    if filtered:
+        cleaned = " ".join(filtered).strip()
+    return _MULTISPACE_RE.sub(" ", cleaned).strip()
+
+
+def _sanitize_summary_text(text: str) -> str:
+    summary = _MULTISPACE_RE.sub(" ", str(text or "")).strip()
+    if not summary:
+        return ""
+    parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(summary) if p.strip()]
+    filtered = [p for p in parts if not _TRANSCRIPT_TECH_SENTENCE_RE.search(p)]
+    if not filtered:
+        return ""
+    return " ".join(filtered).strip()
+
+
+def _norm_for_compare(text: str) -> str:
+    return re.sub(r"[\W_]+", "", _MULTISPACE_RE.sub(" ", text).lower(), flags=re.UNICODE)
+
+
+def _looks_like_transcript_dump(summary: str, transcript: str) -> bool:
+    s = _MULTISPACE_RE.sub(" ", str(summary or "")).strip()
+    t = _MULTISPACE_RE.sub(" ", str(transcript or "")).strip()
+    if not s or not t:
+        return False
+    if len(t) < 500:
+        return False
+    if len(s) >= int(len(t) * 0.85):
+        return True
+
+    s_parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(s) if p.strip()]
+    t_parts = [p.strip() for p in _SENTENCE_SPLIT_RE.split(t) if p.strip()]
+    if len(s_parts) < 5 or not t_parts:
+        return False
+    t_norm = {_norm_for_compare(p) for p in t_parts if p.strip()}
+    matched = sum(1 for p in s_parts if _norm_for_compare(p) in t_norm)
+    return (matched / len(s_parts)) >= 0.85 and len(s) >= 250
 
 
 def _sentence_priority(sentence: str) -> int:
@@ -257,6 +339,266 @@ def _resolve_ingestion_source(*, provider: str, normalized_url: str) -> tuple[st
     return normalized_url, _INGESTION_DIRECT
 
 
+def _build_commission_summary(cleaned_transcript: str, warnings: list[str]) -> str:
+    if len(cleaned_transcript) < MIN_TRANSCRIPT_CHARS:
+        return COMMISSION_NO_TEXT
+    try:
+        summary = summarize_transcript_ru(cleaned_transcript).strip()
+    except SummaryGenerationError as exc:
+        warnings.append(
+            f"Суммаризация недоступна: {_normalized_exception_message(exc, fallback='LLM summary error')}"
+        )
+        summary = _extractive_summary_from_transcript(cleaned_transcript, min_sentences=7, max_sentences=8)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("summary layer raised")
+        warnings.append(
+            f"Суммаризация недоступна: {_normalized_exception_message(exc, fallback='LLM summary error')}"
+        )
+        summary = _extractive_summary_from_transcript(cleaned_transcript, min_sentences=7, max_sentences=8)
+
+    summary = _sanitize_summary_text(summary)
+    summary = _normalize_summary_sentences(summary, min_sentences=7, max_sentences=8)
+    if summary and _looks_like_transcript_dump(summary, cleaned_transcript):
+        warnings.append("Суммаризация вернула сырой фрагмент; применена извлекающая выжимка.")
+        summary = ""
+    if not summary:
+        summary = _extractive_summary_from_transcript(cleaned_transcript, min_sentences=7, max_sentences=8)
+        summary = _sanitize_summary_text(summary)
+        summary = _normalize_summary_sentences(summary, min_sentences=7, max_sentences=8)
+    if not summary:
+        summary = COMMISSION_NO_TEXT
+    return summary
+
+
+def _run_youtube_subtitles_pipeline(
+    *,
+    source_url: str,
+    provider: str,
+    resource_type: str,
+    normalized_url: str,
+    access_status: str,
+    warnings: list[str],
+) -> VideoPipelineOutcome:
+    try:
+        metadata = ffmpeg_tools.fetch_youtube_metadata(normalized_url or source_url)
+    except ffmpeg_tools.YouTubeMetadataError as exc:
+        msg = _normalized_exception_message(exc, fallback="Не удалось получить метаданные YouTube.")
+        return _failed_outcome_with_context(
+            errors=[msg],
+            warnings=warnings,
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            text_acquisition_error_code=exc.code,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("youtube metadata fetch failed")
+        msg = _normalized_exception_message(exc, fallback="Не удалось получить метаданные YouTube.")
+        return _failed_outcome_with_context(
+            errors=[msg],
+            warnings=warnings,
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            text_acquisition_error_code="metadata_fetch_failed",
+        )
+
+    duration = float(metadata.duration_sec or 0.0)
+    if not metadata.has_video:
+        return _failed_outcome_with_context(
+            errors=["По ссылке не обнаружена видеодорожка."],
+            warnings=warnings,
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            text_acquisition_error_code="metadata_video_track_missing",
+        )
+    if duration <= 0:
+        return _failed_outcome_with_context(
+            errors=["Не удалось определить длительность YouTube видео."],
+            warnings=warnings,
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            text_acquisition_error_code="metadata_duration_missing",
+        )
+
+    dur_int = int(round(duration))
+    if dur_int > MAX_YOUTUBE_SUMMARY_DURATION_SEC:
+        return VideoPipelineOutcome(
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            duration_sec=dur_int,
+            duration_formatted=_format_duration(duration),
+            width=metadata.width,
+            height=metadata.height,
+            codec_video=metadata.codec_video,
+            codec_audio=metadata.codec_audio,
+            container=metadata.container,
+            has_video_track=metadata.has_video,
+            has_audio_track=metadata.has_audio,
+            sampled_timestamps_sec=[],
+            frames_extracted_success=0,
+            face_detected_frames_count=0,
+            raw_transcript="",
+            transcript_source="none",
+            transcript_confidence=None,
+            captions_language=None,
+            text_acquisition_error_code=None,
+            commission_summary=COMMISSION_VIDEO_TOO_LONG,
+            candidate_visible=False,
+            has_speech=False,
+            warnings=warnings,
+            errors=[],
+            media_status=MEDIA_STATUS_READY,
+        )
+
+    try:
+        captions = ffmpeg_tools.fetch_youtube_captions_text(normalized_url or source_url)
+    except ffmpeg_tools.YouTubeCaptionsError as exc:
+        msg = _normalized_exception_message(exc, fallback="Субтитры YouTube недоступны.")
+        return VideoPipelineOutcome(
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            duration_sec=dur_int,
+            duration_formatted=_format_duration(duration),
+            width=metadata.width,
+            height=metadata.height,
+            codec_video=metadata.codec_video,
+            codec_audio=metadata.codec_audio,
+            container=metadata.container,
+            has_video_track=metadata.has_video,
+            has_audio_track=metadata.has_audio,
+            sampled_timestamps_sec=[],
+            frames_extracted_success=0,
+            face_detected_frames_count=0,
+            raw_transcript="",
+            transcript_source="none",
+            transcript_confidence=None,
+            captions_language=None,
+            text_acquisition_error_code=exc.code,
+            commission_summary=COMMISSION_NO_TEXT,
+            candidate_visible=False,
+            has_speech=False,
+            warnings=[*warnings, f"Субтитры YouTube недоступны: {msg}"],
+            errors=[],
+            media_status=MEDIA_STATUS_PARTIAL,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("youtube captions fetch failed")
+        msg = _normalized_exception_message(exc, fallback="Субтитры YouTube недоступны.")
+        return VideoPipelineOutcome(
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            duration_sec=dur_int,
+            duration_formatted=_format_duration(duration),
+            width=metadata.width,
+            height=metadata.height,
+            codec_video=metadata.codec_video,
+            codec_audio=metadata.codec_audio,
+            container=metadata.container,
+            has_video_track=metadata.has_video,
+            has_audio_track=metadata.has_audio,
+            sampled_timestamps_sec=[],
+            frames_extracted_success=0,
+            face_detected_frames_count=0,
+            raw_transcript="",
+            transcript_source="none",
+            transcript_confidence=None,
+            captions_language=None,
+            text_acquisition_error_code="captions_fetch_failed",
+            commission_summary=COMMISSION_NO_TEXT,
+            candidate_visible=False,
+            has_speech=False,
+            warnings=[*warnings, f"Субтитры YouTube недоступны: {msg}"],
+            errors=[],
+            media_status=MEDIA_STATUS_PARTIAL,
+        )
+
+    cleaned_transcript = _clean_transcript_for_summary(captions.text)
+    if len(cleaned_transcript) < MIN_TRANSCRIPT_CHARS:
+        return VideoPipelineOutcome(
+            provider=provider,
+            resource_type=resource_type,
+            ingestion_strategy=_INGESTION_YOUTUBE,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            duration_sec=dur_int,
+            duration_formatted=_format_duration(duration),
+            width=metadata.width,
+            height=metadata.height,
+            codec_video=metadata.codec_video,
+            codec_audio=metadata.codec_audio,
+            container=metadata.container,
+            has_video_track=metadata.has_video,
+            has_audio_track=metadata.has_audio,
+            sampled_timestamps_sec=[],
+            frames_extracted_success=0,
+            face_detected_frames_count=0,
+            raw_transcript=cleaned_transcript,
+            transcript_source="youtube_captions",
+            transcript_confidence=None,
+            captions_language=captions.language,
+            text_acquisition_error_code="captions_text_too_short",
+            commission_summary=COMMISSION_NO_TEXT,
+            candidate_visible=False,
+            has_speech=False,
+            warnings=[*warnings, "Субтитры доступны, но текста недостаточно для сводки."],
+            errors=[],
+            media_status=MEDIA_STATUS_PARTIAL,
+        )
+
+    summary_warnings = list(warnings)
+    summary = _build_commission_summary(cleaned_transcript, summary_warnings)
+    return VideoPipelineOutcome(
+        provider=provider,
+        resource_type=resource_type,
+        ingestion_strategy=_INGESTION_YOUTUBE,
+        normalized_url=normalized_url,
+        access_status=access_status,
+        duration_sec=dur_int,
+        duration_formatted=_format_duration(duration),
+        width=metadata.width,
+        height=metadata.height,
+        codec_video=metadata.codec_video,
+        codec_audio=metadata.codec_audio,
+        container=metadata.container,
+        has_video_track=metadata.has_video,
+        has_audio_track=metadata.has_audio,
+        sampled_timestamps_sec=[],
+        frames_extracted_success=0,
+        face_detected_frames_count=0,
+        raw_transcript=cleaned_transcript,
+        transcript_source="youtube_captions",
+        transcript_confidence=None,
+        captions_language=captions.language,
+        text_acquisition_error_code=None,
+        commission_summary=summary,
+        candidate_visible=False,
+        has_speech=True,
+        warnings=summary_warnings,
+        errors=[],
+        media_status=MEDIA_STATUS_READY,
+    )
+
+
 def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
     """Download/process video locally and produce signals for commission + internal storage."""
     url = (video_url or "").strip()
@@ -292,6 +634,16 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
             ingestion_strategy=_INGESTION_NONE,
             normalized_url=normalized_url,
             access_status=access_status,
+        )
+
+    if provider == "youtube":
+        return _run_youtube_subtitles_pipeline(
+            source_url=url,
+            provider=provider,
+            resource_type=resource_type,
+            normalized_url=normalized_url,
+            access_status=access_status,
+            warnings=warnings,
         )
 
     try:
@@ -398,7 +750,6 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
             asr_failed = False
             captions_language: str | None = None
             text_acquisition_error_code: str | None = None
-            captions_infra_error = False
             if has_a:
                 wav = Path(tmpdir) / "audio.wav"
                 try:
@@ -425,58 +776,12 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
                 text_acquisition_error_code = text_acquisition_error_code or "audio_track_missing"
                 warnings.append("Аудиодорожка не обнаружена.")
 
-            has_speech = len(raw.strip()) >= MIN_TRANSCRIPT_CHARS
-            if not has_speech and provider == "youtube":
-                try:
-                    captions = ffmpeg_tools.download_youtube_caption_payload(normalized_url or url)
-                    raw = captions.text
-                    has_speech = len(raw.strip()) >= MIN_TRANSCRIPT_CHARS
-                    if has_speech:
-                        transcript_source = "youtube_captions"
-                        captions_language = captions.language
-                        text_acquisition_error_code = None
-                        warnings.append(
-                            f"Транскрипт получен из субтитров YouTube ({captions.source}, язык: {captions.language})."
-                        )
-                except ffmpeg_tools.YouTubeCaptionsError as exc:
-                    msg = _normalized_exception_message(exc, fallback="captions error")
-                    warnings.append(f"Субтитры YouTube недоступны: {msg}")
-                    text_acquisition_error_code = exc.code
-                    captions_infra_error = bool(exc.infrastructure)
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("youtube captions fallback failed")
-                    warnings.append(
-                        f"Субтитры YouTube недоступны: {_normalized_exception_message(exc, fallback='captions error')}"
-                    )
-                    text_acquisition_error_code = "captions_fetch_failed"
-                    captions_infra_error = True
-
-            if has_speech:
-                try:
-                    summary = summarize_transcript_ru(raw).strip()
-                except SummaryGenerationError as exc:
-                    warnings.append(
-                        f"Суммаризация недоступна: {_normalized_exception_message(exc, fallback='LLM summary error')}"
-                    )
-                    summary = _extractive_summary_from_transcript(raw, min_sentences=7, max_sentences=8)
-                except Exception as exc:
-                    logger.exception("summary layer raised")
-                    warnings.append(
-                        f"Суммаризация недоступна: {_normalized_exception_message(exc, fallback='LLM summary error')}"
-                    )
-                    summary = _extractive_summary_from_transcript(raw, min_sentences=7, max_sentences=8)
-                summary = _normalize_summary_sentences(summary, min_sentences=7, max_sentences=8)
-                if not summary:
-                    summary = _extractive_summary_from_transcript(raw, min_sentences=7, max_sentences=8)
-                if not summary:
-                    summary = COMMISSION_NO_TEXT
-            else:
-                summary = COMMISSION_NO_TEXT
+            cleaned_transcript = _clean_transcript_for_summary(raw)
+            has_speech = len(cleaned_transcript) >= MIN_TRANSCRIPT_CHARS
+            summary = _build_commission_summary(cleaned_transcript, warnings) if has_speech else COMMISSION_NO_TEXT
 
             text_infra_issue = False
             if asr_failed and not has_speech:
-                text_infra_issue = True
-            if captions_infra_error and not has_speech:
                 text_infra_issue = True
 
             if errors:
@@ -504,7 +809,7 @@ def run_presentation_pipeline(video_url: str) -> VideoPipelineOutcome:
                 sampled_timestamps_sec=times,
                 frames_extracted_success=frames_ok,
                 face_detected_frames_count=face_hits,
-                raw_transcript=raw,
+                raw_transcript=cleaned_transcript,
                 transcript_source=transcript_source,
                 transcript_confidence=tr_conf,
                 captions_language=captions_language,

@@ -67,6 +67,7 @@ def test_summarize_transcript_ru_uses_full_text_map_reduce(monkeypatch: pytest.M
 
 def test_postprocess_summary_removes_generic_and_duplicates() -> None:
     raw = (
+        "Kind: captions Language: ru. "
         "Кандидат рассказывает о себе и своем пути. "
         "Он самостоятельно запустил учебный проект и довел его до результата. "
         "Он самостоятельно запустил учебный проект и довел его до результата. "
@@ -80,6 +81,8 @@ def test_postprocess_summary_removes_generic_and_duplicates() -> None:
     result = summary_openai._postprocess_summary_text(raw)
     out_sentences = [s for s in re.split(r"(?<=[.!?])\s+", result) if s.strip()]
 
+    assert "kind: captions" not in result.lower()
+    assert "language: ru" not in result.lower()
     assert "кандидат рассказывает о себе" not in result.lower()
     assert 7 <= len(out_sentences) <= 8
 

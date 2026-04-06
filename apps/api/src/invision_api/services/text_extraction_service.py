@@ -19,6 +19,10 @@ EXTRACTOR_VERSION = "1.0.0"
 logger = logging.getLogger(__name__)
 
 
+class DocumentNotFoundError(ValueError):
+    """Raised when a queued extraction references a document that no longer exists."""
+
+
 @dataclass
 class ExtractionOutcome:
     text: str | None
@@ -78,7 +82,7 @@ def extract_and_persist_for_document(db: Session, document_id: UUID) -> Document
     """Load document bytes from storage, extract text, persist DocumentExtraction and link on Document."""
     doc = db.get(Document, document_id)
     if not doc:
-        raise ValueError("document not found")
+        raise DocumentNotFoundError("document not found")
 
     try:
         raw = read_document_bytes_with_fallback(document_id=doc.id, storage_key=doc.storage_key)

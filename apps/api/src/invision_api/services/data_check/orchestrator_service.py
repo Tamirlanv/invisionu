@@ -12,7 +12,7 @@ from invision_api.models.enums import DataCheckRunStatus, DataCheckUnitStatus, D
 from invision_api.repositories import commission_repository, data_check_repository
 from invision_api.services import job_dispatcher_service
 from invision_api.services.data_check.job_registry import FIRST_WAVE_UNITS
-from invision_api.services.data_check.status_service import UNIT_POLICIES, dependencies_met
+from invision_api.services.data_check.status_service import TERMINAL_UNIT_STATUSES, UNIT_POLICIES, dependencies_met
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,68 @@ def _terminalize_run_on_sla_timeout(db: Session, run: CandidateValidationRun) ->
 
     logger.warning("sla_terminalize run=%s new_status=%s", run.id, run_computed.status)
     return True
+
+
+def _retire_noncanonical_run(db: Session, *, run: CandidateValidationRun) -> bool:
+    """Mark non-canonical active run terminal so sweep does not process it forever."""
+    reason_code = "noncanonical_run_retired"
+    now = datetime.now(tz=UTC)
+    touched = False
+
+    checks = data_check_repository.list_checks_for_run(db, run.id)
+    for check in checks:
+        if check.status in TERMINAL_UNIT_STATUSES:
+            continue
+        data_check_repository.update_check_status(
+            db,
+            check=check,
+            status=DataCheckUnitStatus.failed.value,
+            last_error=reason_code,
+        )
+        touched = True
+        try:
+            unit_type = DataCheckUnitType(check.check_type)
+        except ValueError:
+            continue
+        data_check_repository.upsert_unit_result(
+            db,
+            run_id=run.id,
+            application_id=run.application_id,
+            unit_type=unit_type.value,
+            status=DataCheckUnitStatus.failed.value,
+            result_payload=check.result_payload,
+            warnings=[],
+            errors=[reason_code],
+            explainability=["Run retired because it is non-canonical for the active data-check policy."],
+            manual_review_required=True,
+            attempts=check.attempts or 0,
+            started_at=check.started_at,
+            finished_at=check.finished_at or now,
+        )
+
+    if run.overall_status in {
+        DataCheckRunStatus.pending.value,
+        DataCheckRunStatus.running.value,
+        "processing",
+    }:
+        data_check_repository.update_run_status(
+            db,
+            run=run,
+            status=DataCheckRunStatus.failed.value,
+            warnings=[],
+            errors=[reason_code],
+            explainability=["Run retired because it is non-canonical for the active data-check policy."],
+        )
+        touched = True
+
+    if touched:
+        try:
+            app_row = data_check_repository.get_application(db, run.application_id)
+            if app_row:
+                commission_repository.upsert_projection_for_application(db, app_row)
+        except Exception:
+            logger.exception("sweep_noncanonical_projection_failed run=%s", run.id)
+    return touched
 
 
 def enqueue_first_wave_jobs(
@@ -212,6 +274,8 @@ def sweep_stuck_runs(db: Session) -> int:
 
     sla_ids = {r.id for r in sla_runs}
     recovered = 0
+    skipped_noncanonical = 0
+    retired_noncanonical = 0
     for run_id in sorted(run_by_id.keys(), key=lambda x: str(x)):
         run = data_check_repository.get_run(db, run_id)
         if not run:
@@ -232,7 +296,10 @@ def sweep_stuck_runs(db: Session) -> int:
             logger.warning("sweep_repair_missing_checks run=%s created=%d", run.id, repaired_missing)
 
         if not data_check_repository.run_has_canonical_policy_checks(db, run.id):
-            logger.info("sweep_skip_noncanonical run=%s", run.id)
+            skipped_noncanonical += 1
+            if _retire_noncanonical_run(db, run=run):
+                retired_noncanonical += 1
+                recovered += 1
             db.flush()
             continue
 
@@ -351,5 +418,12 @@ def sweep_stuck_runs(db: Session) -> int:
             _try_auto_advance(db, run_computed=run_computed, app=app, application_id=run.application_id)
 
         db.flush()
+
+    if skipped_noncanonical > 0:
+        logger.info(
+            "sweep_noncanonical_summary skipped=%d retired=%d",
+            skipped_noncanonical,
+            retired_noncanonical,
+        )
 
     return recovered
