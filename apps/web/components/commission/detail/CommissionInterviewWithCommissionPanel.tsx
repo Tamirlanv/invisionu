@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api-client";
+import { resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import { getCommissionAiInterviewCandidateSession, postCommissionInterviewOutcome } from "@/lib/commission/query";
 import type { CommissionAiInterviewSessionView } from "@/lib/commission/types";
 import { formatPreferenceVariantLine } from "@/lib/commission/interviewScheduleOptions";
@@ -12,6 +13,7 @@ type Props = {
   applicationId: string;
   isActive: boolean;
   readOnly?: boolean;
+  candidateFullName?: string | null;
 };
 
 function padVariants(
@@ -22,7 +24,18 @@ function padVariants(
   return out.slice(0, 3);
 }
 
-export function CommissionInterviewWithCommissionPanel({ applicationId, isActive, readOnly = false }: Props) {
+function formatDateTime(raw: string, candidateFullName: string | null | undefined): string {
+  const dt = resolveDisplayDate(raw, candidateFullName);
+  if (!dt) return raw;
+  return dt.toLocaleString("ru-RU");
+}
+
+export function CommissionInterviewWithCommissionPanel({
+  applicationId,
+  isActive,
+  readOnly = false,
+  candidateFullName,
+}: Props) {
   const [data, setData] = useState<CommissionAiInterviewSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +150,7 @@ export function CommissionInterviewWithCommissionPanel({ applicationId, isActive
             })}
             {cp.preferencesSubmittedAt ? (
               <p className={styles.meta}>
-                Отправлено: {new Date(cp.preferencesSubmittedAt).toLocaleString("ru-RU")}
+                Отправлено: {formatDateTime(cp.preferencesSubmittedAt, candidateFullName)}
               </p>
             ) : null}
           </div>
@@ -176,6 +189,7 @@ export function CommissionInterviewWithCommissionPanel({ applicationId, isActive
         prefillSlot={prefillSlot}
         prefillVersion={prefillVersion}
         readOnly={readOnly}
+        candidateFullName={candidateFullName}
       />
 
       {scheduledInterview?.scheduledAt && !scheduledInterview.outcomeRecordedAt ? (
@@ -223,7 +237,7 @@ export function CommissionInterviewWithCommissionPanel({ applicationId, isActive
       {scheduledInterview?.outcomeRecordedAt ? (
         <p className={styles.meta} style={{ marginTop: 16 }}>
           Итог собеседования зафиксирован:{" "}
-          {new Date(scheduledInterview.outcomeRecordedAt).toLocaleString("ru-RU")}
+          {formatDateTime(scheduledInterview.outcomeRecordedAt, candidateFullName)}
         </p>
       ) : null}
     </div>

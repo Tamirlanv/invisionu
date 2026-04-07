@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createCommissionComment } from "@/lib/commission/query";
+import { resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import type { CommissionApplicationPersonalInfoView } from "@/lib/commission/types";
 
 const MONTHS_GEN = [
@@ -24,10 +25,10 @@ function pad2(n: number): string {
 }
 
 /** Локальное время: сегодня 01:32 · вчера · 3 апреля · 27 марта 2025 */
-function formatCommentTimestamp(iso: string | null): string {
+function formatCommentTimestamp(iso: string | null, candidateFullName: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = resolveDisplayDate(iso, candidateFullName);
+  if (!d) return iso;
 
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -51,6 +52,7 @@ function formatCommentTimestamp(iso: string | null): string {
 
 type Props = {
   applicationId: string;
+  candidateFullName?: string | null;
   comments: CommissionApplicationPersonalInfoView["comments"];
   canComment: boolean;
   embedded?: boolean;
@@ -58,7 +60,14 @@ type Props = {
   onCommentSaved?: () => void | Promise<void>;
 };
 
-export function CommissionCommentBlock({ applicationId, comments, canComment, embedded, onCommentSaved }: Props) {
+export function CommissionCommentBlock({
+  applicationId,
+  candidateFullName = null,
+  comments,
+  canComment,
+  embedded,
+  onCommentSaved,
+}: Props) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -137,9 +146,9 @@ export function CommissionCommentBlock({ applicationId, comments, canComment, em
           {comments.map((comment) => (
             <article key={comment.id} style={{ borderTop: "1px solid #e1e1e1", paddingTop: 10 }}>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 350, color: "#262626" }}>{comment.text}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 12, fontWeight: 350, color: "#626262" }}>
-                {comment.authorName} · {formatCommentTimestamp(comment.createdAt)}
-              </p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, fontWeight: 350, color: "#626262" }}>
+                {comment.authorName} · {formatCommentTimestamp(comment.createdAt, candidateFullName)}
+                </p>
             </article>
           ))}
         </div>

@@ -12,6 +12,7 @@ import {
   searchCommissionApplicationsForDocuments,
 } from "@/lib/commission/query";
 import { getCommissionCardBorderStyle } from "@/lib/commission/cardBorder";
+import { formatDateDDMMYY, resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import { filterDocumentsForCategory, type DocumentCategoryFilter } from "@/lib/commission/documentsFilters";
 import { useCommissionSidebarOpen } from "@/lib/commission/use-commission-sidebar-open";
 import type { CommissionApplicationPersonalInfoView, CommissionBoardApplicationCard } from "@/lib/commission/types";
@@ -42,14 +43,11 @@ function commissionDocCardBorderClass(
   return map.docCardNeutral;
 }
 
-function formatSubmittedDate(raw: string | null | undefined): string {
+function formatSubmittedDate(raw: string | null | undefined, candidateFullName: string): string {
   if (!raw) return "—";
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}.${mm}.${yy}`;
+  const d = resolveDisplayDate(raw, candidateFullName);
+  if (!d) return raw;
+  return formatDateDDMMYY(d);
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -435,7 +433,7 @@ function DocumentsPageInner() {
                           {card.age != null ? <span>{card.age} лет</span> : null}
                         </div>
                         <div className={styles.resultColRight}>
-                          <span>{formatSubmittedDate(card.submittedAt)}</span>
+                          <span>{formatSubmittedDate(card.submittedAt, card.candidateFullName)}</span>
                           {card.city ? <span>{card.city}</span> : null}
                         </div>
                       </div>

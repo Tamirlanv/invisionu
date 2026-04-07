@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
 import { getCommissionCardBorderStyle, getDataCheckPhaseCaption } from "@/lib/commission/cardBorder";
+import { formatDateDDMMYY, resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import type { CommissionBoardApplicationCard, CommissionStage } from "@/lib/commission/types";
 import type { CommissionPermissions } from "@/lib/commission/permissions";
 import styles from "./ApplicationCard.module.css";
@@ -25,14 +26,10 @@ function formatProgramLabel(raw: string | null | undefined): string {
   return t;
 }
 
-function formatDate(raw: string | null | undefined): string {
-  if (!raw) return "—";
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}.${mm}.${yy}`;
+function formatDate(raw: string | null | undefined, candidateFullName: string): string {
+  const d = resolveDisplayDate(raw, candidateFullName);
+  if (!d) return raw ?? "—";
+  return formatDateDDMMYY(d);
 }
 
 function DragHandleGrip() {
@@ -124,7 +121,7 @@ function CardTextBlock({
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-          <span>{formatDate(card.submittedAt)}</span>
+          <span>{formatDate(card.submittedAt, card.candidateFullName)}</span>
           {card.city ? <span>{card.city}</span> : null}
         </div>
       </div>

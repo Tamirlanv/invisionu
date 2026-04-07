@@ -1,4 +1,5 @@
 import type { InterviewBoardCard, InterviewBoardColumn } from "./interviewTypes";
+import { resolveDisplayDate } from "./candidate-timestamp-override";
 
 function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -27,22 +28,23 @@ export function formatInterviewColumnTitle(slotDate: Date, today: Date): string 
   return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" }).format(slotDate);
 }
 
-function formatTimeFromIso(iso: string | null | undefined): string | null {
+function formatTimeFromIso(iso: string | null | undefined, candidateFullName: string): string | null {
   if (!iso || typeof iso !== "string") return null;
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return null;
+  const d = resolveDisplayDate(iso, candidateFullName);
+  if (!d) return null;
   return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
 export function mapApiRowToInterviewCard(row: Record<string, unknown>): InterviewBoardCard {
   const scheduledIso = asStr(row.interview_scheduled_at_iso);
+  const candidateFullName = String(row.candidate_full_name ?? "");
   const visual = asStr(row.visual_status);
   return {
     applicationId: String(row.application_id ?? ""),
-    candidateFullName: String(row.candidate_full_name ?? ""),
+    candidateFullName,
     line1: String(row.program ?? "") || "—",
     line2: String(row.education_track ?? "") || "—",
-    timeLabel: formatTimeFromIso(scheduledIso),
+    timeLabel: formatTimeFromIso(scheduledIso, candidateFullName),
     action: scheduledIso ? "interview" : "assign_date",
     highlight: visual === "positive",
     scheduledAtIso: scheduledIso,
@@ -68,12 +70,12 @@ export function buildInterviewColumns(cards: InterviewBoardCard[], now: Date = n
       assign.push(c);
       continue;
     }
-    const d = new Date(c.scheduledAtIso);
-    if (isNaN(d.getTime())) {
+    const displayDate = resolveDisplayDate(c.scheduledAtIso, c.candidateFullName);
+    if (!displayDate || isNaN(displayDate.getTime())) {
       assign.push(c);
       continue;
     }
-    const key = localDayKey(d);
+    const key = localDayKey(displayDate);
     const list = byDay.get(key) ?? [];
     list.push(c);
     byDay.set(key, list);

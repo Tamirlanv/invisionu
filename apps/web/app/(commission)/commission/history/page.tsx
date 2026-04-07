@@ -20,6 +20,7 @@ import type {
   CommissionHistoryMode,
   CommissionHistorySort,
 } from "@/lib/commission/types";
+import { formatDateTimeDDMMYYHHMM, resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import styles from "../page.module.css";
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -52,6 +53,13 @@ function eventTypeFromQuery(v: string | null): CommissionHistoryEventFilter {
 
 function sortFromQuery(v: string | null): CommissionHistorySort {
   return v === "oldest" ? "oldest" : "newest";
+}
+
+function formatArchiveUpdatedAt(raw: string | null | undefined, candidateFullName: string): string {
+  if (!raw) return "—";
+  const overridden = resolveDisplayDate(raw, candidateFullName);
+  if (overridden) return formatDateTimeDDMMYYHHMM(overridden);
+  return raw;
 }
 
 export default function CommissionHistoryPage() {
@@ -245,7 +253,7 @@ function CommissionHistoryInner() {
                 >
                   <div style={{ fontWeight: 550 }}>{c.candidateFullName}</div>
                   <div style={{ fontSize: 13, color: "#626262", marginTop: 4, fontWeight: 350 }}>
-                    {c.program || "—"} · обновлено {c.updatedAt ?? "—"}
+                    {c.program || "—"} · обновлено {formatArchiveUpdatedAt(c.updatedAt, c.candidateFullName)}
                   </div>
                   <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 350 }}>Только просмотр</div>
                 </Link>

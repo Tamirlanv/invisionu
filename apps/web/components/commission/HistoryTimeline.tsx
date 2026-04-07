@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import type { CommissionHistoryEvent } from "@/lib/commission/types";
 
 type Props = {
@@ -11,9 +12,9 @@ type Props = {
   linkToCandidate?: boolean;
 };
 
-function formatTimestampRu(iso: string): string {
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return iso;
+function formatTimestampRu(iso: string, candidateFullName: string): string {
+  const dt = resolveDisplayDate(iso, candidateFullName);
+  if (!dt) return iso;
   return dt.toLocaleString("ru-RU", {
     day: "2-digit",
     month: "2-digit",
@@ -62,7 +63,7 @@ export function HistoryTimeline({
             >
               <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                 <span style={{ fontSize: 12, fontWeight: 350, color: "#8b8b8b", letterSpacing: "-0.36px" }}>
-                  {formatTimestampRu(event.timestamp)}
+                  {formatTimestampRu(event.timestamp, event.candidateFullName)}
                 </span>
               </div>
               <span

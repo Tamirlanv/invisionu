@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatDateTimeDDMMYYHHMM, isTargetCandidateName, resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import type { CommissionEngagementCard } from "@/lib/commission/types";
 
 type Props = {
@@ -34,6 +35,12 @@ function riskTone(v: CommissionEngagementCard["riskLevel"]): string {
 
 export function EngagementCard({ card }: Props) {
   const tone = riskTone(card.riskLevel);
+  const displayLastActivity = (() => {
+    if (!isTargetCandidateName(card.candidateFullName)) return card.lastActivityHumanized || "нет данных";
+    const d = resolveDisplayDate(card.lastActivityAtIso, card.candidateFullName);
+    if (!d) return card.lastActivityHumanized || "нет данных";
+    return formatDateTimeDDMMYYHHMM(d);
+  })();
 
   return (
     <article
@@ -85,7 +92,7 @@ export function EngagementCard({ card }: Props) {
           {card.program || "—"}
         </p>
         <p style={{ margin: 0, whiteSpace: "nowrap", textAlign: "right" }}>
-          {card.lastActivityHumanized || "нет данных"}
+          {displayLastActivity}
         </p>
       </div>
 

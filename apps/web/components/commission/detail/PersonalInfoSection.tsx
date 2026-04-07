@@ -359,6 +359,7 @@ export function PersonalInfoSection({
               <CommissionCandidateAiInterviewPanel
                 applicationId={data.applicationId}
                 isActive={commissionPillIndex === 1 && interviewSubTab === "AI-собеседование"}
+                candidateFullName={data.candidateSummary.fullName}
               />
             ) : null}
             {interviewSubTab === "Собеседование с комиссией" ? (
@@ -366,6 +367,7 @@ export function PersonalInfoSection({
                 applicationId={data.applicationId}
                 isActive={commissionPillIndex === 1 && interviewSubTab === "Собеседование с комиссией"}
                 readOnly={readOnly}
+                candidateFullName={data.candidateSummary.fullName}
               />
             ) : null}
           </div>

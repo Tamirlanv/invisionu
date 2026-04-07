@@ -38,17 +38,15 @@ import type {
 } from "@/lib/commission/types";
 import tabTransitionStyles from "@/components/commission/detail/commission-tab-transitions.module.css";
 import styles from "./page.module.css";
+import { formatDateDDMMYY, resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 
 type LoadError = { status: number | null; message: string };
 
-/** Formats an ISO date string or "YYYY-MM-DD" as "DD.MM.YY" */
-function formatSubmittedDate(raw: string): string {
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}.${mm}.${yy}`;
+/** Formats an ISO date string or "YYYY-MM-DD" as "DD.MM.YY" with candidate-specific display override. */
+function formatSubmittedDate(raw: string, candidateFullName: string): string {
+  const d = resolveDisplayDate(raw, candidateFullName);
+  if (!d) return raw;
+  return formatDateDDMMYY(d);
 }
 
 function formatAttentionSeverity(severity: AttentionNote["severity"]): string {
@@ -593,7 +591,7 @@ export default function CommissionApplicationDetailPage() {
               </div>
               {data.candidateSummary.submittedAt ? (
                 <p className={styles.candidateDate}>
-                  {formatSubmittedDate(data.candidateSummary.submittedAt)}
+                  {formatSubmittedDate(data.candidateSummary.submittedAt, data.candidateSummary.fullName)}
                 </p>
               ) : null}
             </div>
@@ -674,6 +672,7 @@ export default function CommissionApplicationDetailPage() {
           <section className={styles.sideCard} style={{ gap: 12 }}>
             <CommissionCommentBlock
               applicationId={data.applicationId}
+              candidateFullName={data.candidateSummary.fullName}
               comments={data.comments}
               canComment={permissions.canComment && data.actions.canComment}
               embedded

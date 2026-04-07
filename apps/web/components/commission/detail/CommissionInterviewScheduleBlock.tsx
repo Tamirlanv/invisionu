@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import { postCommissionInterviewSchedule } from "@/lib/commission/query";
 import type { CommissionScheduledInterviewPayload } from "@/lib/commission/types";
 import {
@@ -17,6 +18,7 @@ type Props = {
   initial: CommissionScheduledInterviewPayload | null;
   onSaved: () => void;
   readOnly?: boolean;
+  candidateFullName?: string | null;
   /** Click candidate variant — fill date/time in this form */
   prefillSlot?: { date: string; timeRangeCode: string } | null;
   /** Bump to re-apply the same slot */
@@ -28,6 +30,7 @@ export function CommissionInterviewScheduleBlock({
   initial,
   onSaved,
   readOnly = false,
+  candidateFullName,
   prefillSlot,
   prefillVersion = 0,
 }: Props) {
@@ -141,7 +144,10 @@ export function CommissionInterviewScheduleBlock({
       {initial?.scheduledAt ? (
         <p className={styles.currentNote}>
           Текущее назначение:{" "}
-          {new Date(initial.scheduledAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" })}
+          {(resolveDisplayDate(initial.scheduledAt, candidateFullName) ?? new Date(initial.scheduledAt)).toLocaleString(
+            "ru-RU",
+            { dateStyle: "long", timeStyle: "short" },
+          )}
           {initial.interviewMode ? ` · ${initial.interviewMode}` : ""}
         </p>
       ) : null}

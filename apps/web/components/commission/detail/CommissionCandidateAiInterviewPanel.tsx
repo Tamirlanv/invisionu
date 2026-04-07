@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { ApiError } from "@/lib/api-client";
+import { resolveDisplayDate } from "@/lib/commission/candidate-timestamp-override";
 import { getCommissionAiInterviewCandidateSession } from "@/lib/commission/query";
 import type { CommissionAiInterviewSessionView } from "@/lib/commission/types";
 function resolutionConfidenceLabel(
@@ -15,9 +16,16 @@ function resolutionConfidenceLabel(
 type Props = {
   applicationId: string;
   isActive: boolean;
+  candidateFullName?: string | null;
 };
 
-export function CommissionCandidateAiInterviewPanel({ applicationId, isActive }: Props) {
+function formatDateTimeForPanel(raw: string, candidateFullName: string | null | undefined): string {
+  const dt = resolveDisplayDate(raw, candidateFullName);
+  if (!dt) return raw;
+  return dt.toLocaleString("ru-RU");
+}
+
+export function CommissionCandidateAiInterviewPanel({ applicationId, isActive, candidateFullName }: Props) {
   const [data, setData] = useState<CommissionAiInterviewSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +117,7 @@ export function CommissionCandidateAiInterviewPanel({ applicationId, isActive }:
           Итоги AI-собеседования
         </h3>
         <p style={{ ...labelStyle, marginTop: 8 }}>
-          Завершено: {new Date(data.interviewCompletedAt).toLocaleString("ru-RU")}
+          Завершено: {formatDateTimeForPanel(data.interviewCompletedAt, candidateFullName)}
         </p>
         {data.resolutionSummary ? (
           <p style={{ ...labelStyle, marginTop: 4 }}>
