@@ -20,7 +20,7 @@ const RESOURCES = [
     title: "Google Disk – Документация",
     description: "Ссылка на документацию проекта, с подробным описанием решения поставленной задачи в ТЗ",
     button: "Google Disk",
-    link: "https://drive.google.com/drive/folders/1Y0eQFydfT9o2MaWy7dlakuR1KfiQywtk?usp=sharing",
+    link: "https://drive.google.com/file/d/12aVAjVGhA3cio2V8VlN7VRpLRS1126Eb/view?usp=drive_link",
   },
   {
     title: "Telegram Bot",
