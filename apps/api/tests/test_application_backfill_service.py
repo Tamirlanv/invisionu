@@ -161,6 +161,38 @@ def test_backfill_full_executes_units_in_order_without_stage_transition(db: Sess
     assert any(line == "backfill_version=2026-04-test-v1" for line in (latest_run.explainability or []))
 
 
+def test_backfill_full_can_auto_advance_ready_from_initial_screening(db: Session, factory, monkeypatch) -> None:
+    app, _ = _make_submitted_application(db, factory, stage=ApplicationStage.initial_screening.value)
+
+    def _make_processor(_unit_name: str):
+        def _processor(_db, application_id, candidate_id, run_id):
+            _ = (application_id, candidate_id, run_id)
+            return UnitExecutionResult(status="completed", payload={"ok": True})
+
+        return _processor
+
+    for unit in svc.FULL_UNIT_ORDER:
+        monkeypatch.setitem(svc.REGISTRY, unit, _make_processor(unit.value))
+
+    monkeypatch.setattr(svc, "_run_analysis_only_actions", lambda *args, **kwargs: ["analysis_only_post_steps"])
+
+    result = svc.reprocess_application(
+        db,
+        application_id=app.id,
+        options=svc.BackfillOptions(
+            mode="full",
+            backfill_version="2026-04-test-v2",
+            auto_advance_ready=True,
+            application_ids=(app.id,),
+        ),
+    )
+
+    assert result.status == "processed"
+    assert "auto_advance_ready_ok" in result.actions
+    db.refresh(app)
+    assert app.current_stage == ApplicationStage.application_review.value
+
+
 def test_backfill_full_skips_same_version_without_force(db: Session, factory, monkeypatch) -> None:
     app, _ = _make_submitted_application(db, factory)
 

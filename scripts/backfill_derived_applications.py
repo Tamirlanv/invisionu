@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--include-archived", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--auto-advance-ready",
+        action="store_true",
+        help="After full recompute, auto-move ready applications from initial_screening to application_review.",
+    )
     parser.add_argument("--backfill-version")
     return parser
 
@@ -86,6 +91,7 @@ def main() -> int:
         include_archived=bool(args.include_archived),
         force=bool(args.force),
         backfill_version=backfill_version,
+        auto_advance_ready=bool(args.auto_advance_ready),
         limit=args.limit,
         offset=args.offset,
         batch_size=args.batch_size,

@@ -61,6 +61,7 @@ class BackfillOptions:
     include_archived: bool = False
     force: bool = False
     backfill_version: str | None = None
+    auto_advance_ready: bool = False
     limit: int | None = None
     offset: int = 0
     batch_size: int = 100
@@ -457,6 +458,34 @@ def _run_analysis_only_actions(
     return actions
 
 
+def _maybe_auto_advance_after_full(
+    db: Session,
+    *,
+    app: Application,
+    run_id: UUID,
+) -> bool:
+    """Try stage auto-advance for backfill run when aggregate is ready.
+
+    Backfill defaults to no stage transitions. This helper is called only when
+    the explicit ``auto_advance_ready`` option is enabled.
+    """
+    from invision_api.services.data_check.job_runner_service import _try_auto_advance
+
+    before_stage = app.current_stage
+    checks = data_check_repository.list_checks_for_run(db, run_id)
+    status_map: dict[DataCheckUnitType, str] = {}
+    for c in checks:
+        try:
+            status_map[DataCheckUnitType(c.check_type)] = c.status
+        except ValueError:
+            continue
+    computed = compute_run_status(status_map)
+    _try_auto_advance(db, run_computed=computed, app=app, application_id=app.id)
+    db.flush()
+    db.refresh(app)
+    return app.current_stage != before_stage
+
+
 def reprocess_application(
     db: Session,
     *,
@@ -550,6 +579,9 @@ def reprocess_application(
             backfill_version=options.backfill_version,
         )
         actions = [f"full_data_check_run:{run_id}", *units]
+        if options.auto_advance_ready:
+            moved = _maybe_auto_advance_after_full(db, app=app, run_id=run_id)
+            actions.append("auto_advance_ready_ok" if moved else "auto_advance_ready_skip")
         actions.extend(_run_analysis_only_actions(db, app=app, force=options.force))
         return BackfillApplicationResult(
             application_id=application_id,
